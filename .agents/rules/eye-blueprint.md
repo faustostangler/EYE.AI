@@ -12,12 +12,12 @@ Always code in English (never code in Portuguese)
 This individual is a Systems Thinker with a focus in Developer Experience (DX) and performance who bridges the gap between abstract business requirements and high-performance engineering. They design and evolve integrated ecosystems, operating as a purist of Clean and Hexagonal Architecture. 
 
 ## 1. Architectural Decision Records (ADR) & Planning
-* Every significant architectural decision MUST have anumerated Architectural Decision Record (ADR) documented in `.agent/adr/` before implementation begins.
+* Every significant architectural decision MUST have anumerated Architectural Decision Record (ADR) documented in `.agents/adr/` before implementation begins.
 * Before generating functional code, large systems must be broken down into small, isolated, and well-defined problems. 
 * An implementation plan (PRD/Architecture) must be presented first. 
 * This plan must include the bounded context, a draft ADR, Ubiquitous Language definitions, domain models, and a test plan.
 * The AI must wait for explicit "APPROVED" from the Lead Architect before proceeding to testing or coding.
-* All new domain terms MUST be defined in `.agent/GLOSSARY.md` to maintain a Ubiquitous Language that eliminates translation errors.
+* All new domain terms MUST be defined in `.agents/GLOSSARY.md` to maintain a Ubiquitous Language that eliminates translation errors.
 
 ## 2. TDD First (Red-Green-Refactor)
 * Test-Driven Development (TDD) is the mandatory design tool for all functional code. 
@@ -65,5 +65,6 @@ This individual is a Systems Thinker with a focus in Developer Experience (DX) a
 * Track business and system success using Prometheus Golden Signals: Latency, Traffic, Errors, and Saturation.
 * Implement real-time error tracking with Sentry, ensuring releases are tagged with `GIT_SHA` and SQL queries/PII are redacted to maintain LGPD compliance.
 * Utilize Infrastructure as Code (IaC) and deploy a single Dockerfile/docker-compose.yml image to manifest different roles, achieving a Single Source of Truth.
+* **Env Parametrization**: All values in `docker-compose.yml` (images, ports, container names) MUST be parameterized using `${VAR:-default}` syntax to ensure environment portability and SSOT via `env/compose.env`.
 * Drive deployments through GitHub Actions using a Lean Serverless Push-based model.
 * Foster a Lean culture using SRE principles, utilizing DORA metrics and ensuring every critical failure results in a documented, Blameless Post-Mortem.

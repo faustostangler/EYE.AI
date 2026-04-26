@@ -33,11 +33,14 @@ ps: ## Show status of all services
 sync: ## Sync local dependencies using uv
 	uv sync
 
-test: ## Run unit and integration tests
-	uv run pytest tests/ --cov=src -v
+test: ## Run full test suite (lint, format, pytest)
+	uv run ruff check .
+	uv run ruff format --check .
+	uv run pytest tests/ -v
 
-mutation: ## Run mutation tests with mutmut
-	uv run mutmut run
+mutate: ## Run mutation testing
+	@echo "🧬 Starting mutation testing with mutmut..."
+	uv run mutmut run --paths-to-mutate src/
 
 lint: ## Run ruff and mypy
 	uv run ruff check .

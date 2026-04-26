@@ -37,3 +37,10 @@ target-version = "py312"
 
 [tool.mypy]
 strict = true
+
+[tool.mutmut]
+paths_to_mutate = "src/"
+backup = false
+runner = "python3 -m pytest tests/ -v"
+tests_dir = "tests/"
+dict_synonyms = ["Struct", "PydanticModel"]

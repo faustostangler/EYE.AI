@@ -10,6 +10,11 @@ def test_config_fails_fast_when_missing_required_env_vars(
 ) -> None:
     """
     Ensures the system cannot boot without critical infrastructure and domain parameters.
+
+    WHY: `_env_file=None` forces Pydantic to ignore the physical `.env` file on disk.
+    Without this, monkeypatch.delenv() is insufficient because Pydantic reads the file
+    *after* the OS environment, silently satisfying the missing required fields. This
+    ensures the test is hermetic and validates raw-container-startup failure behavior.
     """
     # Wipe the environment to simulate a raw container startup
     monkeypatch.delenv("PEP_API_URL", raising=False)
@@ -17,7 +22,7 @@ def test_config_fails_fast_when_missing_required_env_vars(
     monkeypatch.delenv("LLM_MODEL_PATH", raising=False)
 
     with pytest.raises(ValidationError) as exc_info:
-        SystemSettings()
+        SystemSettings(_env_file=None)
 
     errors = str(exc_info.value)
     assert "PEP_API_URL" in errors

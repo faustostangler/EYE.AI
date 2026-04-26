@@ -41,6 +41,6 @@ strict = true
 [tool.mutmut]
 paths_to_mutate = "src/"
 backup = false
-runner = "python3 -m pytest tests/ -v"
+runner = "uv run pytest"
 tests_dir = "tests/"
 dict_synonyms = ["Struct", "PydanticModel"]

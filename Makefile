@@ -3,15 +3,16 @@ COMPOSE_FILE := docker-compose.yml
 ENV_FILE := env/compose.env
 LOCAL_ENV := .env
 
-.PHONY: help setup build up down logs ps test lint clean sync mutation
+.PHONY: help setup build up down logs ps test lint clean sync mutate
 
 help: ## Show this help message
 	@echo "Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-$(LOCAL_ENV): ## Generate local .env from compose.env for local tools (SSOT)
-	@echo "Generating $(LOCAL_ENV) from $(ENV_FILE)..."
-	@cp $(ENV_FILE) $(LOCAL_ENV)
+$(LOCAL_ENV): $(ENV_FILE) ## Generate local .env from compose.env and creds.env (SSOT)
+	@echo "Generating $(LOCAL_ENV) from $(ENV_FILE) and env/creds.env..."
+	@cat $(ENV_FILE) > $(LOCAL_ENV)
+	@if [ -f env/creds.env ]; then cat env/creds.env >> $(LOCAL_ENV); fi
 
 setup: $(LOCAL_ENV) sync ## Setup local development environment
 
@@ -30,17 +31,21 @@ logs: ## View logs for all services
 ps: ## Show status of all services
 	docker compose ps
 
-sync: ## Sync local dependencies using uv
-	uv sync
+sync: ## Sync local dependencies using uv (including dev extras)
+	uv sync --all-extras
 
-test: ## Run full test suite (lint, format, pytest)
+test: ## Run full test suite (lint, format, pytest, mutate)
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run pytest tests/ -v
+	$(MAKE) mutate
 
-mutate: ## Run mutation testing
+test-cov: ## Run tests with coverage report
+	uv run pytest tests/ --cov=src --cov-report=term-missing
+
+mutate: ## Run mutation tests with mutmut
 	@echo "🧬 Starting mutation testing with mutmut..."
-	uv run mutmut run --paths-to-mutate src/
+	uv run mutmut run
 
 lint: ## Run ruff and mypy
 	uv run ruff check .

@@ -1,7 +1,7 @@
 # ADR 0001: Global Architecture Blueprint for Local Clinical RAG
 
 ## Status
-Proposed
+Approved
 
 ## Context
 The hospital requires a local Retrieval-Augmented Generation (RAG) system to ingest Electronic Health Records (PEP - Prontuário Eletrônico do Paciente) and generate conduct analysis using the Gemma 4 open-source LLM. To guarantee strict compliance with the General Data Protection Law (LGPD), the system must operate entirely on the local hospital network, with absolute zero cloud dependency (air-gapped environment). 
@@ -36,7 +36,7 @@ We will proceed with **Option 2 (SOTA Modular Monolith)** to satisfy the archite
 ### 2. Resource Allocation (Hardware Constraints)
 Given the 6GB VRAM limit on the RTX 2060:
 * **Embeddings & Vector Database:** Embeddings generation and **Qdrant** will run exclusively on **CPU**.
-* **LLM Inference:** The GPU is fully dedicated to inference. We will use `llama.cpp` serving a quantized version of Gemma 4 via a local REST API. The container will enforce strict VRAM limits and cap the maximum context size to prevent KV cache exhaustion and OOM errors. (Future-proofed to migrate to vLLM in v2).
+* **LLM Inference:** The GPU is fully dedicated to inference. We will use `llama.cpp` serving a quantized version of Gemma 4 via a local REST API. The container will enforce strict VRAM limits and cap the maximum context size to prevent KV cache exhaustion and OOM errors. (Future-proofed to migrate to vLLM in v2, as in ADR 0002).
 
 ### 3. Infrastructure & Deployment
 * **Containerization:** Single `Dockerfile` using `python:3.12-slim-bookworm` with `uv` for fast dependency resolution.

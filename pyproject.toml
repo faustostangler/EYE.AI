@@ -1,5 +1,5 @@
 [project]
-name = "eye-clinical-analytics"
+name = "eye-analytics"
 version = "0.1.0"
 description = "Clinical Analysis Core Domain using Local RAG and LLM Inference"
 readme = "README.md"

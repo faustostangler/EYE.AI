@@ -175,7 +175,7 @@ wheels = [
 ]
 
 [[package]]
-name = "eye-clinical-analytics"
+name = "eye-analytics"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

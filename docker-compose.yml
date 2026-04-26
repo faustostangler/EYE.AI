@@ -4,8 +4,8 @@ services:
   # ---------------------------------------------
   api:
     build: .
-    image: ${API_IMAGE_NAME:-eye-clinical-core}:${API_IMAGE_TAG:-latest}
-    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_api
+    image: ${API_IMAGE_NAME:-eye-core}:${API_IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_api
     ports:
       - "${DOCKER_BIND_IP:-127.0.0.1}:${API_EXTERNAL_PORT:-8000}:${API_INTERNAL_PORT:-8000}"
     environment:
@@ -25,8 +25,8 @@ services:
   # ---------------------------------------------
   inference-worker:
     build: .
-    image: ${WORKER_IMAGE_NAME:-eye-clinical-core}:${WORKER_IMAGE_TAG:-latest}
-    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_worker
+    image: ${WORKER_IMAGE_NAME:-eye-core}:${WORKER_IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_worker
     deploy:
       resources:
         reservations:
@@ -53,7 +53,7 @@ services:
   # ---------------------------------------------
   redis-broker:
     image: ${REDIS_IMAGE_NAME:-redis}:${REDIS_IMAGE_TAG:-7-alpine}
-    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_redis
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_redis
     ports:
       - "${DOCKER_BIND_IP:-127.0.0.1}:${REDIS_EXTERNAL_PORT:-6379}:${REDIS_INTERNAL_PORT:-6379}"
     volumes:
@@ -61,7 +61,7 @@ services:
 
   qdrant-db:
     image: ${QDRANT_IMAGE_NAME:-qdrant/qdrant}:${QDRANT_IMAGE_TAG:-v1.8.0}
-    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_qdrant
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_qdrant
     ports:
       - "${DOCKER_BIND_IP:-127.0.0.1}:${QDRANT_EXTERNAL_PORT:-6333}:${QDRANT_INTERNAL_PORT:-6333}"
     volumes:

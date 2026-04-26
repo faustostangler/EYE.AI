@@ -61,23 +61,36 @@ These commands utilize `docker-compose.yml` and `uv` to ensure the integrity of 
 | Sync dependencies | `make sync` |
 | Setup local environment (.env & sync) | `make setup` |
 
-## 3. Conflict Resolution (Troubleshooting)
+## 3. Monitoring & Inspection
 
-### Port Conflict (e.g., Port 6379 occupied)
-If the system fails to start Redis because the port is already allocated on the host:
+### Services Logs
+Watch the heartbeats of the API and Inference Worker:
+```bash
+docker logs -f eye_api
+docker logs -f eye_worker
+```
 
-1. **Identify the invading process:**
-   ```bash
-   sudo lsof -i :6379
-   ```
+### Data & Infrastructure
+Check Redis keyspace (queues and states):
+```bash
+docker exec -it eye_redis redis-cli info keyspace
+```
 
-2. **Disable native service (Recommended for SSOT):**
-   ```bash
-   sudo systemctl stop redis-server
-   sudo systemctl disable redis-server
-   ```
+Access Qdrant Web Dashboard:
+[http://localhost:6333/dashboard](http://localhost:6333/dashboard) (Default API port)
 
-3. **Restart the EYE.AI environment:**
-   ```bash
-   make down && make up
-   ```
+### Hardware Monitoring
+Monitor the health and VRAM usage of your RTX 2060:
+```bash
+watch -n 1 nvidia-smi
+```
+
+### Container Shell Access
+Inspect the source code or environment inside a running container:
+```bash
+docker exec -it eye_api sh
+# Inside the container:
+ls -R /app/src
+exit
+```
+

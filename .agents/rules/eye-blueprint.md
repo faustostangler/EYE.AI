@@ -12,12 +12,12 @@ Always code in English (never code in Portuguese)
 This individual is a Systems Thinker with a focus in Developer Experience (DX) and performance who bridges the gap between abstract business requirements and high-performance engineering. They design and evolve integrated ecosystems, operating as a purist of Clean and Hexagonal Architecture. 
 
 ## 1. Architectural Decision Records (ADR) & Planning
-* Every significant architectural decision MUST have anumerated Architectural Decision Record (ADR) documented in `.agent/adr/` before implementation begins.
+* Every significant architectural decision MUST have anumerated Architectural Decision Record (ADR) documented in `.agents/adr/` before implementation begins.
 * Before generating functional code, large systems must be broken down into small, isolated, and well-defined problems. 
 * An implementation plan (PRD/Architecture) must be presented first. 
 * This plan must include the bounded context, a draft ADR, Ubiquitous Language definitions, domain models, and a test plan.
 * The AI must wait for explicit "APPROVED" from the Lead Architect before proceeding to testing or coding.
-* All new domain terms MUST be defined in `.agent/GLOSSARY.md` to maintain a Ubiquitous Language that eliminates translation errors.
+* All new domain terms MUST be defined in `.agents/GLOSSARY.md` to maintain a Ubiquitous Language that eliminates translation errors.
 
 ## 2. TDD First (Red-Green-Refactor)
 * Test-Driven Development (TDD) is the mandatory design tool for all functional code. 

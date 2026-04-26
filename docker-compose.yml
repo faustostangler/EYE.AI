@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------
+  # 1. API Gateway (Ingestion & ACL) - CPU ONLY
+  # ---------------------------------------------
+  api:
+    build: .
+    image: ${API_IMAGE_NAME:-eye-clinical-core}:${API_IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_api
+    ports:
+      - "${DOCKER_BIND_IP:-127.0.0.1}:${API_EXTERNAL_PORT:-8000}:${API_INTERNAL_PORT:-8000}"
+    environment:
+      - ENV=${ENV:-development}
+      - CONTAINER_ROLE=${CONTAINER_ROLE_API:-api}
+      - REDIS_DSN=${REDIS_DSN:-redis://redis-broker:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant-db:6333}
+    env_file:
+      - env/compose.env
+    command: ["uvicorn", "src.adapters.inbound.api.routes:router", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      - redis-broker
+
+  # ---------------------------------------------
+  # 2. Inference Worker (Core Domain) - GPU BOUND
+  # ---------------------------------------------
+  inference-worker:
+    build: .
+    image: ${WORKER_IMAGE_NAME:-eye-clinical-core}:${WORKER_IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_worker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - ENV=${ENV:-development}
+      - CONTAINER_ROLE=${CONTAINER_ROLE_WORKER:-worker}
+      - REDIS_DSN=${REDIS_DSN:-redis://redis-broker:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant-db:6333}
+      - LLM_MAX_CONTEXT_TOKENS=${LLM_MAX_CONTEXT_TOKENS:-2048}
+      - LLM_GPU_LAYERS=${LLM_GPU_LAYERS:-30}
+    env_file:
+      - .env
+    command: ["rq", "worker", "--url", "${REDIS_DSN:-redis://redis-broker:6379/0}"]
+    depends_on:
+      - redis-broker
+      - qdrant-db
+
+  # ---------------------------------------------
+  # 3. Infrastructure Dependencies
+  # ---------------------------------------------
+  redis-broker:
+    image: ${REDIS_IMAGE_NAME:-redis}:${REDIS_IMAGE_TAG:-7-alpine}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_redis
+    ports:
+      - "${DOCKER_BIND_IP:-127.0.0.1}:${REDIS_EXTERNAL_PORT:-6379}:${REDIS_INTERNAL_PORT:-6379}"
+    volumes:
+      - redis_data:/data
+
+  qdrant-db:
+    image: ${QDRANT_IMAGE_NAME:-qdrant/qdrant}:${QDRANT_IMAGE_TAG:-v1.8.0}
+    container_name: ${COMPOSE_PROJECT_NAME:-eye}_clinical_qdrant
+    ports:
+      - "${DOCKER_BIND_IP:-127.0.0.1}:${QDRANT_EXTERNAL_PORT:-6333}:${QDRANT_INTERNAL_PORT:-6333}"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  redis_data:
+  qdrant_data:

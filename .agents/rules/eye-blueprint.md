@@ -65,5 +65,6 @@ This individual is a Systems Thinker with a focus in Developer Experience (DX) a
 * Track business and system success using Prometheus Golden Signals: Latency, Traffic, Errors, and Saturation.
 * Implement real-time error tracking with Sentry, ensuring releases are tagged with `GIT_SHA` and SQL queries/PII are redacted to maintain LGPD compliance.
 * Utilize Infrastructure as Code (IaC) and deploy a single Dockerfile/docker-compose.yml image to manifest different roles, achieving a Single Source of Truth.
+* **Env Parametrization**: All values in `docker-compose.yml` (images, ports, container names) MUST be parameterized using `${VAR:-default}` syntax to ensure environment portability and SSOT via `env/compose.env`.
 * Drive deployments through GitHub Actions using a Lean Serverless Push-based model.
 * Foster a Lean culture using SRE principles, utilizing DORA metrics and ensuring every critical failure results in a documented, Blameless Post-Mortem.

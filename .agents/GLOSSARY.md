@@ -25,3 +25,14 @@ Terms dealing with physical hardware constraints (6GB VRAM) and RAG resilience.
 *   **KVCacheLimit:** The strict context token ceiling configured in `llama.cpp` to ensure LLM processing never exceeds the 6GB VRAM of the RTX 2060.
 *   **VectorID / TraceID:** Telemetry identifiers. The `TraceID` follows the request from the API, while the `VectorID` identifies which piece of the `MedicalGuideline` was injected into the prompt, ensuring explainability of the AI decision without leaking PHI.
 
+
+## 4. Visio-Chat Hermes (Clinical Preceptorship)
+Terms specific to the clinical decision support MVP.
+
+*   **MedicalPreceptor:** The clinical mentor AI persona designed to guide medical decisions safely without external hallucinations.
+
+## 5. Developer Experience & Platform (The Factory)
+Terms for repository organization, isolation, and engineering culture.
+
+*   **Playground:** A root-level directory for spikes, experimental scratchpads, and rapid prototyping that do not follow TDD/Hexagonal standards.
+*   **Dark Folder:** A directory structure (like `playground/`) that is explicitly excluded from the domain model, ADR requirements, and production import graphs to allow for high-velocity exploration.

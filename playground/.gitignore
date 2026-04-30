@@ -1,0 +1,9 @@
+# Experimental Playground Ignored Assets
+# We keep code/notebooks in the repo but ignore local caches and large data files.
+
+.ipynb_checkpoints/
+__pycache__/
+*.log
+data/
+cache/
+.env.local

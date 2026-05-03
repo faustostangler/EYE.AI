@@ -168,3 +168,7 @@ gercon_consolidado.parquet.new
 # env/creds.env é ignorado pois contém secrets.
 # env/config.env e env/compose.env são versionados (defaults sem secrets).
 /.env
+docs/rag/
+models/
+chroma_db_hermes/
+playground/chroma_db_hermes/

@@ -11,8 +11,11 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "redis>=5.0.0",
     "rq>=1.16.0",          # Lightweight Redis queue for async workers
-    "llama-cpp-python>=0.2.56", 
+    "llama-cpp-python>=0.2.56",
     "qdrant-client>=1.8.0",
+    "streamlit>=1.57.0",
+    "ollama>=0.6.2",
+    "langchain-ollama>=1.1.0",
 ]
 
 [project.optional-dependencies]

@@ -6,14 +6,10 @@ import math
 
 def check_gpu():
     try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
-        try:
-            subprocess.check_output("nvidia-smi", shell=True, stderr=subprocess.DEVNULL)
-            return True
-        except Exception:
-            return False
+        subprocess.check_output("nvidia-smi", shell=True, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        return False
 
 def install_deps(has_gpu):
     try:

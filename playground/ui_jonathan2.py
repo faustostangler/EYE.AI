@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------
 # Configurações da Página e Dependências
 # ---------------------------------------------------------
-st.set_page_config(page_title="Jonathan - Prontuário Eletrônico", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="Visio-Scribe Jonathan - Prontuário Eletrônico", page_icon="🩺", layout="wide")
 
 try:
     from faster_whisper import WhisperModel
@@ -28,7 +28,7 @@ class ElectronicHealthRecord(BaseModel):
     diagnostico_hipotese: str = Field(description="Hipótese diagnóstica ou diagnóstico confirmado")
     conduta_tratamento: str = Field(description="Conduta, tratamento ou medicamentos prescritos")
 
-MODEL_SIZE = "small"
+MODEL_SIZE = os.getenv("WHISPER_MODEL_NAME", "small")
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")

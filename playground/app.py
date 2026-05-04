@@ -11,7 +11,7 @@ import json
 import tempfile
 import glob
 import re
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ---------------------------------------------------------
@@ -35,8 +35,8 @@ except ImportError:
 # ---------------------------------------------------------
 class Settings(BaseSettings):
     MODEL_NAME: str = Field(default="gemma4:e4b", validation_alias="LLM_MODEL_PATH")
-    EMBEDDING_MODEL_NAME: str = "nomic-embed-text"
-    WHISPER_MODEL: str = "small"
+    EMBEDDING_MODEL_NAME: str = Field(default="nomic-embed-text", validation_alias="EMBEDDING_MODEL_NAME")
+    WHISPER_MODEL: str = Field(default="small", validation_alias="WHISPER_MODEL_NAME")
     DEVICE: str = "cpu" # Força CPU para evitar conflito de VRAM com Ollama
     COMPUTE_TYPE: str = "int8"
     
@@ -65,6 +65,21 @@ class ElectronicHealthRecord(BaseModel):
     exames_solicitados: list[str] = Field(description="Exames pedidos pelo médico")
     diagnostico_hipotese: str = Field(description="Hipótese diagnóstica ou diagnóstico confirmado")
     conduta_tratamento: str = Field(description="Conduta, tratamento ou medicamentos prescritos")
+    especialidade: str = Field(description="Especialidade do caso: 'strabismus' ou 'mock'")
+
+    @field_validator("queixa_principal", "historia_doenca_atual", "diagnostico_hipotese", "conduta_tratamento", "especialidade", mode="before")
+    @classmethod
+    def cast_to_string(cls, v):
+        if isinstance(v, list):
+            return " ".join(str(item) for item in v)
+        return v if v is not None else ""
+
+    @field_validator("sintomas", "exames_solicitados", mode="before")
+    @classmethod
+    def cast_to_list(cls, v):
+        if isinstance(v, str):
+            return [v]
+        return v if v is not None else []
 
 # ---------------------------------------------------------
 # Cache de Modelos e Motores
@@ -117,7 +132,7 @@ def get_vector_db(kb_name: str, force_reindex: bool = False):
     if not documentos:
         return None
         
-    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300)
     chunks = splitter.split_documents(documentos)
     
     try:
@@ -128,9 +143,9 @@ def get_vector_db(kb_name: str, force_reindex: bool = False):
         return None
 
 # ---------------------------------------------------------
-# Componentes: HERMES (RAG)
+# Componentes: VISIO-CHAT HERMES (RAG)
 # ---------------------------------------------------------
-class HermesService:
+class VisioChatHermesService:
     def __init__(self, kb_name: str):
         self.kb_name = kb_name
         self.llm = get_llm()
@@ -160,18 +175,19 @@ class HermesService:
         except:
             return query
 
-    def ask(self, query: str):
+    def ask(self, query: str, search_query: str = None):
         if not self.db:
             return "Erro: Base de conhecimento não disponível ou vazia. Por favor, reindexe.", []
         
-        search_query = self.rewrite_query(query)
+        if not search_query:
+            search_query = self.rewrite_query(query)
         
         # Busca principal
-        docs = self.db.as_retriever(search_kwargs={"k": 5}).invoke(search_query)
+        docs = self.db.as_retriever(search_kwargs={"k": 15}).invoke(search_query)
         
         # Fallback para busca literal
         if not docs:
-            docs = self.db.as_retriever(search_kwargs={"k": 5}).invoke(query)
+            docs = self.db.as_retriever(search_kwargs={"k": 15}).invoke(query)
             
         reorder = LongContextReorder()
         docs = reorder.transform_documents(docs)
@@ -187,7 +203,7 @@ class HermesService:
         return chain.invoke({"contexto": contexto, "pergunta": query}), docs
 
 # ---------------------------------------------------------
-# Componentes: JONATHAN (Transcription)
+# Componentes: VISIO-SCRIBE JONATHAN (Transcription)
 # ---------------------------------------------------------
 def transcribe_audio(file_path):
     model = get_whisper()
@@ -200,30 +216,30 @@ def transcribe_audio(file_path):
 st.set_page_config(page_title="EYE.AI Dashboard", layout="wide", page_icon="👁️")
 
 st.sidebar.title("👁️ EYE.AI Dashboard")
-service = st.sidebar.radio("Navegação:", ["🛡️ Hermes (Chat Clínico)", "🩺 Jonathan (Prontuário)"])
+service = st.sidebar.radio("Navegação:", ["🛡️ Visio-Chat Hermes", "🩺 Visio-Scribe Jonathan"])
 
-# --- HERMES ---
-if service == "🛡️ Hermes (Chat Clínico)":
+# --- VISIO-CHAT HERMES ---
+if service == "🛡️ Visio-Chat Hermes":
     st.title("🛡️ Visio-Chat Hermes")
     
     # Gerenciamento de Estado do RAG
-    if "hermes_kb" not in st.session_state:
-        st.session_state.hermes_kb = "strabismus"
+    if "visio_chat_hermes_kb" not in st.session_state:
+        st.session_state.visio_chat_hermes_kb = "strabismus"
     if "messages" not in st.session_state:
         st.session_state.messages = []
         
-    # Painel Principal do Hermes (Controles)
+    # Painel Principal do Visio-Chat Hermes (Controles)
     with st.container(border=True):
         col1, col2, col3, col4 = st.columns([2, 1, 1, 1.5])
         
-        db_path = settings.get_db_path(st.session_state.hermes_kb)
+        db_path = settings.get_db_path(st.session_state.visio_chat_hermes_kb)
         db_exists = os.path.exists(db_path)
         
         with col1:
-            novo_kb = st.selectbox("Base de Conhecimento (RAG):", ["strabismus", "mock"], index=["strabismus", "mock"].index(st.session_state.hermes_kb))
+            novo_kb = st.selectbox("Base de Conhecimento (RAG):", ["strabismus", "mock"], index=["strabismus", "mock"].index(st.session_state.visio_chat_hermes_kb))
             # Se o usuário trocou o KB, limpa o chat e avisa que o RAG atualizou
-            if novo_kb != st.session_state.hermes_kb:
-                st.session_state.hermes_kb = novo_kb
+            if novo_kb != st.session_state.visio_chat_hermes_kb:
+                st.session_state.visio_chat_hermes_kb = novo_kb
                 st.session_state.messages = []
                 st.toast(f"Base RAG alterada para '{novo_kb}' com sucesso!", icon="🔄")
                 st.rerun()
@@ -239,22 +255,22 @@ if service == "🛡️ Hermes (Chat Clínico)":
             if st.button("🔄 Reindexar Base", use_container_width=True):
                 # Limpa o cache para forçar reindexação
                 get_vector_db.clear()
-                with st.spinner(f"Reindexando documentos em {st.session_state.hermes_kb}..."):
-                    db = get_vector_db(st.session_state.hermes_kb, force_reindex=True)
+                with st.spinner(f"Reindexando documentos em {st.session_state.visio_chat_hermes_kb}..."):
+                    db = get_vector_db(st.session_state.visio_chat_hermes_kb, force_reindex=True)
                 if db:
-                    st.success(f"Base '{st.session_state.hermes_kb}' reindexada com sucesso!")
+                    st.success(f"Base '{st.session_state.visio_chat_hermes_kb}' reindexada com sucesso!")
                 st.session_state.messages = []
                 st.rerun()
                 
         with col4:
             st.write("") # Alinhamento
             if db_exists:
-                st.success(f"🟢 RAG Carregado ({st.session_state.hermes_kb})")
+                st.success(f"🟢 RAG Carregado ({st.session_state.visio_chat_hermes_kb})")
             else:
                 st.error("🔴 RAG Não Inicializado")
 
     # Instancia o serviço ativo
-    hermes = HermesService(st.session_state.hermes_kb)
+    visio_chat_hermes = VisioChatHermesService(st.session_state.visio_chat_hermes_kb)
     
     # Área do Chat
     for m in st.session_state.messages:
@@ -265,14 +281,17 @@ if service == "🛡️ Hermes (Chat Clínico)":
         with st.chat_message("user"): st.markdown(prompt)
         with st.chat_message("assistant"):
             with st.spinner("Consultando protocolos..."):
-                res, docs = hermes.ask(prompt)
+                res, docs = visio_chat_hermes.ask(prompt)
             st.markdown(res)
-            with st.expander("📄 Fontes Consultadas"):
-                for d in docs: st.caption(f"Arquivo: {os.path.basename(d.metadata.get('source', ''))}")
+            with st.expander("📄 Fontes e Contextos Consultados"):
+                for d in docs:
+                    st.markdown(f"**Fonte:** `{os.path.basename(d.metadata.get('source', ''))}`")
+                    st.caption(d.page_content)
+                    st.divider()
         st.session_state.messages.append({"role": "assistant", "content": res})
 
-# --- JONATHAN ---
-elif service == "🩺 Jonathan (Prontuário)":
+# --- VISIO-SCRIBE JONATHAN ---
+elif service == "🩺 Visio-Scribe Jonathan":
     st.title("🩺 Visio-Scribe Jonathan")
     st.markdown("Gravação de consulta e geração automática de Prontuário Eletrônico.")
     
@@ -281,35 +300,75 @@ elif service == "🩺 Jonathan (Prontuário)":
     with col_input:
         audio_data = st.audio_input("Grave a consulta (ou use o ícone de pasta para Upload)")
         if audio_data:
-            st.info("Áudio capturado. Clique no botão abaixo para processar.")
-            if st.button("🚀 GERAR PRONTUÁRIO ESTRUTURADO", type="primary", use_container_width=True):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                    tmp.write(audio_data.getvalue())
-                    path = tmp.name
-                    
-                with st.status("Processando consulta...", expanded=True) as status:
-                    st.write("Transcrevendo áudio (CPU)...")
-                    text = transcribe_audio(path)
-                    os.remove(path)
-                    
-                    st.write("Estruturando com IA (Gemma 3)...")
-                    prompt = f"Extraia um Prontuário JSON desta consulta: {text}. Use a estrutura: queixa_principal, historia_doenca_atual, sintomas[], exames_solicitados[], diagnostico_hipotese, conduta_tratamento."
-                    res = get_llm().invoke(prompt)
-                    status.update(label="Processamento concluído!", state="complete", expanded=False)
-                    
-                match = re.search(r'\{.*\}', res, re.DOTALL)
-                if match:
-                    ehr = ElectronicHealthRecord(**json.loads(match.group(0)))
-                    st.session_state.last_ehr = ehr.model_dump()
-                    st.session_state.last_transcript = text
-                    st.rerun()
-            
-            if "last_transcript" in st.session_state:
-                st.text_area("Transcrição Bruta:", st.session_state.last_transcript, height=150)
+            audio_id = hash(audio_data.getvalue())
+            # Se for áudio novo, limpa o estado anterior
+            if st.session_state.get("last_audio_id") != audio_id:
+                st.session_state.last_audio_id = audio_id
+                keys_to_clear = ["last_transcript", "last_ehr", "last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]
+                for k in keys_to_clear:
+                    if k in st.session_state: del st.session_state[k]
+
+            # Etapa: Transcrição do Áudio
+            with st.expander("Transcrição do Áudio", expanded=("last_transcript" not in st.session_state)):
+                if "last_transcript" not in st.session_state:
+                    with st.spinner("🎧 Transcrevendo áudio..."):
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            tmp.write(audio_data.getvalue())
+                            path = tmp.name
+                        text = transcribe_audio(path)
+                        os.remove(path)
+                        st.session_state.last_transcript = text
+                st.write(st.session_state.last_transcript)
+
+            # Etapa: Prontuário Estruturado
+            with st.expander("Prontuário Estruturado", expanded=("last_ehr" not in st.session_state and "last_transcript" in st.session_state)):
+                if "last_ehr" not in st.session_state and "last_transcript" in st.session_state:
+                    with st.spinner("📝 Organizando informações..."):
+                        prompt = f"Extraia um Prontuário JSON desta consulta: {st.session_state.last_transcript}. Use a estrutura: queixa_principal, historia_doenca_atual, sintomas[], exames_solicitados[], diagnostico_hipotese, conduta_tratamento e especialidade (decida entre 'strabismus' ou 'mock')."
+                        res = get_llm().invoke(prompt)
+                        match = re.search(r'\{.*\}', res, re.DOTALL)
+                        if match:
+                            data = json.loads(match.group(0))
+                            ehr = ElectronicHealthRecord(**data)
+                            st.session_state.last_ehr = ehr.model_dump()
+                            st.session_state.temp_data = data # Auxiliar para a próxima etapa
+                if "last_ehr" in st.session_state:
+                    st.success("✅ Informações extraídas e validadas.")
+
+            # Etapa: Consulta ao Especialista
+            with st.expander("Consulta ao Especialista", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):
+                if "last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state:
+                    with st.spinner("🗣️ Consultando Visio-Chat Hermes..."):
+                        data = st.session_state.get("temp_data", {})
+                        chosen_kb = data.get("especialidade", "mock").lower()
+                        chosen_kb = "strabismus" if "strabismus" in chosen_kb else "mock"
+                        
+                        v_service = VisioChatHermesService(chosen_kb)
+                        v_prompt = f"Atue como especialista. Avalie o seguinte prontuário: {json.dumps(st.session_state.last_ehr)}"
+                        v_res, v_docs = v_service.ask(v_prompt, search_query=st.session_state.last_ehr.get("diagnostico_hipotese"))
+                        
+                        st.session_state.last_visio_chat_hermes_opinion = v_res
+                        st.session_state.last_visio_chat_hermes_kb = chosen_kb
+                        st.session_state.last_visio_chat_hermes_docs = v_docs
+                        st.rerun() # Rerun final para atualizar o painel da direita
+                
+                if "last_visio_chat_hermes_opinion" in st.session_state:
+                    st.write(f"Especialidade: **{st.session_state.last_visio_chat_hermes_kb}**")
+                    st.success("✅ Parecer técnico gerado.")
                         
     with col_out:
         if "last_ehr" in st.session_state:
             st.success("✅ Prontuário Gerado")
             st.json(st.session_state.last_ehr)
+            
+            if "last_visio_chat_hermes_opinion" in st.session_state:
+                st.markdown("---")
+                st.subheader(f"🗣️ Opinião do Especialista (Base: {st.session_state.last_visio_chat_hermes_kb})")
+                st.info(st.session_state.last_visio_chat_hermes_opinion)
+                with st.expander("📄 Fontes e Contextos Consultados pelo Visio-Chat Hermes"):
+                    for d in st.session_state.last_visio_chat_hermes_docs:
+                        st.markdown(f"**Fonte:** `{os.path.basename(d.metadata.get('source', ''))}`")
+                        st.caption(d.page_content)
+                        st.divider()
         else:
-            st.info("O prontuário aparecerá aqui.")
+            st.info("O prontuário estruturado e a opinião do especialista aparecerão aqui.")

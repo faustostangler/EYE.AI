@@ -5,7 +5,7 @@ import json
 import argparse
 from pydantic import BaseModel, Field
 
-# Playground rules: single file script for Jonathan v3 (YouTube extraction)
+# Playground rules: single file script for Visio-Scribe Jonathan (YouTube extraction)
 def check_gpu():
     try:
         subprocess.check_output("nvidia-smi", shell=True, stderr=subprocess.DEVNULL)
@@ -55,7 +55,7 @@ class YouTubeSummary(BaseModel):
 # ==========================================
 # Configurações do LLM e Whisper
 # ==========================================
-MODEL_SIZE = "small"
+MODEL_SIZE = os.getenv("WHISPER_MODEL_NAME", "small")
 COMPUTE_TYPE = "float16" if has_gpu else "int8"
 DEVICE = "cuda" if has_gpu else "cpu"
 LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
@@ -97,7 +97,7 @@ def generate_structured_document(transcript: str):
     print("\n[LLM] Estruturando os conceitos principais...")
     llm = OllamaLLM(model=LLM_MODEL, temperature=0.0)
     
-    prompt = f"""Você é o Jonathan v3, um analista especializado em estruturação de conhecimento.
+    prompt = f"""Você é o Visio-Scribe Jonathan, um analista especializado em estruturação de conhecimento.
 Abaixo está a transcrição de um vídeo do YouTube.
 Sua tarefa é extrair as informações e gerar um documento organizado com os conceitos principais.
 
@@ -148,7 +148,7 @@ Responda APENAS com um JSON válido que siga esta estrutura exata:
         print(f"Erro no processamento do LLM: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Jonathan v3 - YouTube Extractor & Structurer")
+    parser = argparse.ArgumentParser(description="Visio-Scribe Jonathan - YouTube Extractor & Structurer")
     parser.add_argument("url", type=str, help="URL do vídeo do YouTube")
     args = parser.parse_args()
 

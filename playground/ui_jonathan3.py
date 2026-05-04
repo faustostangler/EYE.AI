@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------
 # Configurações da Página e Dependências
 # ---------------------------------------------------------
-st.set_page_config(page_title="Jonathan v3 - Analisador de YouTube", page_icon="📺", layout="wide")
+st.set_page_config(page_title="Visio-Scribe Jonathan - Analisador de YouTube", page_icon="📺", layout="wide")
 
 try:
     from faster_whisper import WhisperModel
@@ -31,7 +31,7 @@ class YouTubeSummary(BaseModel):
     conceitos_principais: list[Conceito] = Field(description="Lista dos conceitos ou tópicos principais organizados")
     conclusao_ou_insights: str = Field(description="A conclusão, próximos passos ou insights finais do vídeo")
 
-MODEL_SIZE = "small"
+MODEL_SIZE = os.getenv("WHISPER_MODEL_NAME", "small")
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
 LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
@@ -78,7 +78,7 @@ def process_audio(audio_path: str):
 
 def generate_summary(transcript: str):
     with st.spinner("Organizando os conceitos com LLM..."):
-        prompt = f"""Você é o Jonathan v3, um analista especializado em estruturação de conhecimento.
+        prompt = f"""Você é o Visio-Scribe Jonathan, um analista especializado em estruturação de conhecimento.
 Sua tarefa é extrair as informações da transcrição bruta e gerar um documento organizado.
 
 Transmissão Bruta:

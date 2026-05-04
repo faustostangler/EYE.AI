@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 """
 Auto-generated script from ingestion.ipynb
-Hermes Clinical Consultant - RAG Pipeline
+Visio-Chat Hermes - RAG Pipeline
 """
 
 
@@ -55,9 +54,9 @@ class Settings(BaseSettings):
         return os.path.join(os.path.dirname(self._BASE_DIR), "docs", "rag", kb_name)
     
     MODEL_NAME: str = Field(default="gemma4:e4b", validation_alias="LLM_MODEL_PATH")
-    EMBEDDING_MODEL_NAME: str = "nomic-embed-text"
-    CHUNK_SIZE: int = 800
-    CHUNK_OVERLAP: int = 150
+    EMBEDDING_MODEL_NAME: str = Field(default="nomic-embed-text", validation_alias="EMBEDDING_MODEL_NAME")
+    CHUNK_SIZE: int = 1500
+    CHUNK_OVERLAP: int = 300
     RETRIEVAL_K: int = 10
     MAX_CONTEXT_TOKENS: int = 8192
     HISTORY_TOKEN_BUDGET: int = 3500
@@ -235,14 +234,14 @@ class ClinicalLLMAdapter:
 # ========================================
 # CELL ID: application
 # ========================================
-class HermesClinicalConsultant:
+class VisioChatHermes:
     def __init__(self, kb_name: str = "mock"):
         self.kb_name = kb_name
         self.vector_db = VectorDBAdapter(kb_name=self.kb_name)
         self.llm = ClinicalLLMAdapter()
 
     def ask(self, pergunta: str, conversation_context: str = "") -> (ClinicalResponse, List):
-        print(f"[HERMES] Analisando consulta: '{pergunta}'")
+        print(f"[VISIO-CHAT HERMES] Analisando consulta: '{pergunta}'")
         
         # 1. Query Rewriting (contextualiza perguntas vagas usando histórico)
         search_query = self.llm.rewrite_query(pergunta, conversation_context)
@@ -278,7 +277,7 @@ class HermesClinicalConsultant:
 # ========================================
 from IPython.display import Markdown, display, HTML
 
-def renderizar_dashboard_hermes(pergunta: str, response: ClinicalResponse, docs_relevantes=None):
+def renderizar_dashboard_visio_chat_hermes(pergunta: str, response: ClinicalResponse, docs_relevantes=None):
     """
     Renderiza um dashboard clínico elegante no Jupyter Notebook.
     """
@@ -325,17 +324,17 @@ def renderizar_dashboard_hermes(pergunta: str, response: ClinicalResponse, docs_
 # ==========================================
 if __name__ == "__main__":
     # Instancia o Consultor (Application Service)
-    hermes = HermesClinicalConsultant(kb_name="mock")
+    visio_chat_hermes = VisioChatHermes(kb_name="mock")
     
     # Opcional: Forçar reingestão se houver novos arquivos
-    # hermes.vector_db.load_or_create(force_reingest=False)
+    # visio_chat_hermes.vector_db.load_or_create(force_reingest=False)
 
     # Consulta de Teste
     pergunta = "Paciente com baixa de visão e catarata, além de disúria. Qual pode ser o diagnóstico?"
-    resposta, docs_originais = hermes.ask(pergunta)
+    resposta, docs_originais = visio_chat_hermes.ask(pergunta)
 
     # Renderização
-    renderizar_dashboard_hermes(pergunta, resposta, docs_originais)
+    renderizar_dashboard_visio_chat_hermes(pergunta, resposta, docs_originais)
 
 # # ========================================
 # # CELL ID: utility_inspector

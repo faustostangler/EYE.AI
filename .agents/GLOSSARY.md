@@ -29,9 +29,14 @@ Terms dealing with physical hardware constraints (6GB VRAM) and RAG resilience.
 ## 4. Visio-Chat Hermes (Clinical Preceptorship)
 Terms specific to the clinical decision support MVP.
 
-*   **MedicalPreceptor:** The clinical mentor AI persona designed to guide medical decisions safely without external hallucinations.
+*   **Visio-Chat Hermes:** The clinical mentor AI persona (Preceptor) designed to guide medical decisions safely using RAG over institutional protocols without external hallucinations.
 
-## 5. Developer Experience & Platform (The Factory)
+## 5. Visio-Scribe Jonathan (Clinical Documentation)
+Terms specific to the automated medical scribe.
+
+*   **Visio-Scribe Jonathan:** The specialized clinical transcription and structuring persona. Responsible for converting audio from consultations into structured Electronic Health Records (EHR) while identifying clinical entities.
+
+## 6. Developer Experience & Platform (The Factory)
 Terms for repository organization, isolation, and engineering culture.
 
 *   **Playground:** A root-level directory for spikes, experimental scratchpads, and rapid prototyping that do not follow TDD/Hexagonal standards.

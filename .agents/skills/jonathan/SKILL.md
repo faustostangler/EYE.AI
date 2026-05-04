@@ -6,16 +6,16 @@ compatibility: python3, ffmpeg
 
 # Visio-Scribe Jonathan
 
-O Jonathan é a interface responsável por transformar longos arquivos de áudio (como consultas médicas de mais de 1h30) em texto estruturado (formato `.srt`).
+O Visio-Scribe Jonathan é a interface responsável por transformar longos arquivos de áudio (como consultas médicas de mais de 1h30) em texto estruturado (formato `.srt`).
 
 Ele possui inteligência para lidar com falhas e hardware:
 - Detecta a presença de GPU para usar `faster-whisper`.
 - Faz fallback em CPU para o `openai-whisper` processando em chunks para evitar sobrecarga de RAM/Timeout.
 - Salva o arquivo `.srt` de forma incremental para não perder progresso em caso de interrupção.
 
-## Como usar o Jonathan
+## Como usar o Visio-Scribe Jonathan
 
-Quando o usuário pedir para transcrever um áudio, utilize o script de transcrição interno do Jonathan:
+Quando o usuário pedir para transcrever um áudio, utilize o script de transcrição interno do Visio-Scribe Jonathan:
 
 ```bash
 python .agents/skills/jonathan/scripts/transcribe.py "caminho/para/audio.mp3"

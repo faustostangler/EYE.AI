@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Hermes Clinical Chat — Streamlit Conversational Interface.
+Visio-Chat Hermes — Streamlit Conversational Interface.
 
 Reuses the RAG adapters from ingestion.py to provide a chat experience
 over institutional clinical protocols.
@@ -27,14 +27,14 @@ import streamlit as st
 # Ensure playground/ is on sys.path for sibling imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ingestion import HermesClinicalConsultant, ClinicalResponse, settings, estimate_tokens
+from ingestion import VisioChatHermes, ClinicalResponse, settings, estimate_tokens
 
 
 # ─────────────────────────────────────────────
 # Page Config
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Hermes Clinical Chat",
+    page_title="Visio-Chat Hermes",
     page_icon="🩺",
     layout="centered",
     initial_sidebar_state="expanded",
@@ -120,7 +120,7 @@ if "current_kb" not in st.session_state:
     st.session_state.current_kb = available_kbs[0]
 
 with st.sidebar:
-    st.markdown("# 🩺 Hermes")
+    st.markdown("# 🩺 Visio-Chat Hermes")
     st.caption("Clinical Decision Support")
     st.divider()
 
@@ -136,8 +136,8 @@ with st.sidebar:
         st.session_state.current_kb = selected_kb
         st.session_state.messages = []
         st.session_state.conversation_context = ""
-        if "hermes" in st.session_state:
-            del st.session_state.hermes
+        if "visio_chat_hermes" in st.session_state:
+            del st.session_state.visio_chat_hermes
         st.rerun()
 
     st.markdown(f"**Modelo LLM:** `{settings.MODEL_NAME}`")
@@ -158,8 +158,8 @@ with st.sidebar:
     with col1:
         if st.button("🔄 Re-ingest", use_container_width=True):
             with st.spinner(f"Ingesting {st.session_state.current_kb}..."):
-                if "hermes" in st.session_state:
-                    st.session_state.hermes.vector_db.load_or_create(force_reingest=True)
+                if "visio_chat_hermes" in st.session_state:
+                    st.session_state.visio_chat_hermes.vector_db.load_or_create(force_reingest=True)
             st.success("Done!")
             st.rerun()
     with col2:
@@ -182,7 +182,7 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────
-# Session State Initialization (Hermes)
+# Session State Initialization (Visio-Chat Hermes)
 # ─────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -190,21 +190,21 @@ if "messages" not in st.session_state:
 if "conversation_context" not in st.session_state:
     st.session_state.conversation_context = ""
 
-if "hermes" not in st.session_state:
-    with st.status(f"🩺 Inicializando Hermes ({st.session_state.current_kb})...", expanded=True) as status:
+if "visio_chat_hermes" not in st.session_state:
+    with st.status(f"🩺 Inicializando Visio-Chat Hermes ({st.session_state.current_kb})...", expanded=True) as status:
         st.write("Configurando adaptadores de IA...")
-        hermes = HermesClinicalConsultant(kb_name=st.session_state.current_kb)
+        visio_chat_hermes = VisioChatHermes(kb_name=st.session_state.current_kb)
         
         db_path = settings.get_db_path(st.session_state.current_kb)
         if not os.path.exists(db_path):
             st.write(f"📚 Base {st.session_state.current_kb} não encontrada. Iniciando ingestão...")
-            hermes.vector_db.load_or_create()
+            visio_chat_hermes.vector_db.load_or_create()
             st.write("✅ Ingestão concluída!")
         else:
             st.write("✅ Memória de protocolos carregada.")
             
-        st.session_state.hermes = hermes
-        status.update(label=f"🩺 Hermes pronto ({st.session_state.current_kb})!", state="complete", expanded=False)
+        st.session_state.visio_chat_hermes = visio_chat_hermes
+        status.update(label=f"🩺 Visio-Chat Hermes pronto ({st.session_state.current_kb})!", state="complete", expanded=False)
 
 
 # ─────────────────────────────────────────────
@@ -235,22 +235,18 @@ def format_response_markdown(response: ClinicalResponse, docs: list) -> str:
 
 
 def get_source_details(docs: list) -> str:
-    """Extracts unique source filenames and preview from retrieved documents."""
+    """Extracts unique source filenames and full context snippet from retrieved documents."""
     details = []
-    seen = set()
-    for doc in docs:
+    for i, doc in enumerate(docs, 1):
         source = os.path.basename(doc.metadata.get("source", "Unknown"))
-        if source not in seen:
-            seen.add(source)
-            preview = doc.page_content[:200].replace("\n", " ")
-            details.append(f"**{source}**\n> {preview}...")
+        details.append(f"#### {i}. Fonte: `{source}`\n{doc.page_content}\n\n---")
     return "\n\n".join(details)
 
 
 # ─────────────────────────────────────────────
 # Chat History Rendering
 # ─────────────────────────────────────────────
-st.markdown("## 🩺 Hermes Clinical Chat")
+st.markdown("## 🩺 Visio-Chat Hermes")
 st.caption("Converse com os protocolos clínicos institucionais")
 
 for msg in st.session_state.messages:
@@ -258,7 +254,7 @@ for msg in st.session_state.messages:
         if msg["role"] == "assistant":
             st.markdown(msg["content"], unsafe_allow_html=True)
             if msg.get("sources"):
-                with st.expander("📚 Detalhes das fontes consultadas"):
+                with st.expander("📄 Fontes e Contextos Consultados"):
                     st.markdown(msg["sources"])
         else:
             st.markdown(msg["content"])
@@ -273,10 +269,10 @@ if prompt := st.chat_input("Descreva o caso clínico..."):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Process with Hermes (passing rolling conversation context)
+    # Process with Visio-Chat Hermes (passing rolling conversation context)
     with st.chat_message("assistant", avatar="🩺"):
         with st.spinner("Consultando protocolos..."):
-            response, docs = st.session_state.hermes.ask(
+            response, docs = st.session_state.visio_chat_hermes.ask(
                 prompt,
                 conversation_context=st.session_state.conversation_context,
             )
@@ -286,12 +282,12 @@ if prompt := st.chat_input("Descreva o caso clínico..."):
 
         st.markdown(formatted, unsafe_allow_html=True)
 
-        with st.expander("📚 Detalhes das fontes consultadas"):
+        with st.expander("📄 Fontes e Contextos Consultados"):
             st.markdown(source_details)
 
     # Update rolling conversation context (compact rewrite, zero LLM cost)
     preview = response.resposta_texto[:100].replace('\n', ' ')
-    turn_summary = f"Médico: {prompt} \u2192 Hermes: {preview}..."
+    turn_summary = f"Médico: {prompt} \u2192 Visio-Chat Hermes: {preview}..."
     if st.session_state.conversation_context:
         st.session_state.conversation_context += f"\n{turn_summary}"
     else:

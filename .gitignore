@@ -171,8 +171,10 @@ gercon_consolidado.parquet.new
 docs/rag/
 models/
 chroma_db_hermes/
-playground/chroma_db_hermes/
+*.sqlite3
 
 # ignore all ogg files in playground
 playground/*/*.ogg
 
+playground/chroma_db_mock/chroma.sqlite3    
+playground/chroma_db_strabismus/chroma.sqlite3

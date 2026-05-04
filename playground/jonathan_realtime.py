@@ -63,7 +63,7 @@ CHUNK_DURATION = 3.0  # seconds per chunk for processing
 MODEL_SIZE = "small"
 COMPUTE_TYPE = "float16" if has_gpu else "int8"
 DEVICE = "cuda" if has_gpu else "cpu"
-LLM_MODEL = "gemma3:4b-it-qat"
+LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
 
 audio_queue = queue.Queue()
 
@@ -188,7 +188,7 @@ def process_microphone_stream(model):
     return " ".join(transcript_accumulated)
 
 def main():
-    parser = argparse.ArgumentParser(description="Jonathan v2 Real-time transcriber & EHR generator")
+    parser = argparse.ArgumentParser(description="Jonathan Real-time transcriber & EHR generator")
     parser.add_argument("--file", type=str, help="Caminho para arquivo de áudio (simula streaming)", default=None)
     args = parser.parse_args()
 

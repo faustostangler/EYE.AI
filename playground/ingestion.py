@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     def get_docs_path(self, kb_name: str) -> str:
         return os.path.join(os.path.dirname(self._BASE_DIR), "docs", "rag", kb_name)
     
-    MODEL_NAME: str = "gemma3:4b-it-qat"
+    MODEL_NAME: str = Field(default="gemma4:e4b", validation_alias="LLM_MODEL_PATH")
     EMBEDDING_MODEL_NAME: str = "nomic-embed-text"
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 150

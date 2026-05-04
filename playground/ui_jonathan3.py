@@ -34,7 +34,7 @@ class YouTubeSummary(BaseModel):
 MODEL_SIZE = "small"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
-LLM_MODEL = "gemma3:4b-it-qat"
+LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
 
 # ---------------------------------------------------------
 # Cache de Modelos

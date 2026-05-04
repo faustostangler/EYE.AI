@@ -58,7 +58,7 @@ class YouTubeSummary(BaseModel):
 MODEL_SIZE = "small"
 COMPUTE_TYPE = "float16" if has_gpu else "int8"
 DEVICE = "cuda" if has_gpu else "cpu"
-LLM_MODEL = "gemma3:4b-it-qat"
+LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
 
 def download_youtube_audio(url: str, output_path: str = "temp_youtube_audio.wav"):
     print(f"\n[YouTube] Baixando áudio de: {url}")

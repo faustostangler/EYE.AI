@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------
 # Configurações da Página e Dependências
 # ---------------------------------------------------------
-st.set_page_config(page_title="Jonathan v2 - Prontuário Eletrônico", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="Jonathan - Prontuário Eletrônico", page_icon="🩺", layout="wide")
 
 try:
     from faster_whisper import WhisperModel
@@ -31,7 +31,7 @@ class ElectronicHealthRecord(BaseModel):
 MODEL_SIZE = "small"
 DEVICE = "cuda"
 COMPUTE_TYPE = "float16"
-LLM_MODEL = "gemma3:4b-it-qat"
+LLM_MODEL = os.getenv("LLM_MODEL_PATH", "gemma4:e4b")
 
 # ---------------------------------------------------------
 # Cache de Modelos
@@ -87,7 +87,7 @@ Responda APENAS com um JSON válido que siga esta estrutura exata:
 # ---------------------------------------------------------
 # UI Principal
 # ---------------------------------------------------------
-st.title("🩺 Visio-Scribe Jonathan v2")
+st.title("🩺 Visio-Scribe Jonathan")
 st.markdown("Gravação de consulta e geração automática de Prontuário Eletrônico (EHR).")
 
 col1, col2 = st.columns([1, 1])

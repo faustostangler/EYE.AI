@@ -48,8 +48,11 @@ class Settings(BaseSettings):
     # Define base paths relative to this file
     _BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
     
-    VECTOR_DB_PATH: str = os.path.join(_BASE_DIR, "chroma_db_hermes")
-    RAG_DOCS_DIR: str = os.path.join(os.path.dirname(_BASE_DIR), "docs", "rag")
+    def get_db_path(self, kb_name: str) -> str:
+        return os.path.join(self._BASE_DIR, f"chroma_db_{kb_name}")
+        
+    def get_docs_path(self, kb_name: str) -> str:
+        return os.path.join(os.path.dirname(self._BASE_DIR), "docs", "rag", kb_name)
     
     MODEL_NAME: str = "gemma3:4b-it-qat"
     EMBEDDING_MODEL_NAME: str = "nomic-embed-text"
@@ -65,7 +68,7 @@ class Settings(BaseSettings):
     }
 
 settings = Settings()
-print(f"[CONFIG] Modelo: {settings.MODEL_NAME} | DB: {settings.VECTOR_DB_PATH}")
+print(f"[CONFIG] Modelo: {settings.MODEL_NAME}")
 
 
 def estimate_tokens(text: str) -> int:
@@ -98,7 +101,8 @@ class ClinicalResponse(BaseModel):
 # ========================================
 class VectorDBAdapter:
     """Adapter de Infraestrutura para o banco vetorial ChromaDB."""
-    def __init__(self):
+    def __init__(self, kb_name: str = "mock"):
+        self.kb_name = kb_name
         self._embeddings = None
         self.db = None
 
@@ -110,18 +114,21 @@ class VectorDBAdapter:
         return self._embeddings
 
     def load_or_create(self, force_reingest: bool = False) -> Chroma:
-        if os.path.exists(settings.VECTOR_DB_PATH) and not force_reingest:
-            print(f"[DB] Carregando banco persistente: {settings.VECTOR_DB_PATH}")
-            self.db = Chroma(persist_directory=settings.VECTOR_DB_PATH, embedding_function=self.embeddings)
+        db_path = settings.get_db_path(self.kb_name)
+        if os.path.exists(db_path) and not force_reingest:
+            print(f"[DB] Carregando banco persistente: {db_path}")
+            self.db = Chroma(persist_directory=db_path, embedding_function=self.embeddings)
         else:
             self.db = self._ingest()
         return self.db
 
     def _ingest(self) -> Chroma:
-        print(f"[DB] Iniciando ingestão rápida de: {settings.RAG_DOCS_DIR}")
+        docs_dir = settings.get_docs_path(self.kb_name)
+        db_path = settings.get_db_path(self.kb_name)
+        print(f"[DB] Iniciando ingestão rápida de: {docs_dir}")
         
         # Fast Loading: glob + TextLoader (evita overhead do DirectoryLoader)
-        docs_path = os.path.join(settings.RAG_DOCS_DIR, "**/*.md")
+        docs_path = os.path.join(docs_dir, "**/*.md")
         files = glob.glob(docs_path, recursive=True)
         
         documentos = []
@@ -139,11 +146,11 @@ class VectorDBAdapter:
         )
         chunks = splitter.split_documents(documentos)
 
-        if os.path.exists(settings.VECTOR_DB_PATH):
+        if os.path.exists(db_path):
             import shutil
-            shutil.rmtree(settings.VECTOR_DB_PATH, ignore_errors=True)
+            shutil.rmtree(db_path, ignore_errors=True)
             
-        db = Chroma.from_documents(chunks, self.embeddings, persist_directory=settings.VECTOR_DB_PATH)
+        db = Chroma.from_documents(chunks, self.embeddings, persist_directory=db_path)
         print(f"[DB] Ingestão concluída ({len(chunks)} chunks).")
         return db
 
@@ -229,8 +236,9 @@ class ClinicalLLMAdapter:
 # CELL ID: application
 # ========================================
 class HermesClinicalConsultant:
-    def __init__(self):
-        self.vector_db = VectorDBAdapter()
+    def __init__(self, kb_name: str = "mock"):
+        self.kb_name = kb_name
+        self.vector_db = VectorDBAdapter(kb_name=self.kb_name)
         self.llm = ClinicalLLMAdapter()
 
     def ask(self, pergunta: str, conversation_context: str = "") -> (ClinicalResponse, List):
@@ -317,7 +325,7 @@ def renderizar_dashboard_hermes(pergunta: str, response: ClinicalResponse, docs_
 # ==========================================
 if __name__ == "__main__":
     # Instancia o Consultor (Application Service)
-    hermes = HermesClinicalConsultant()
+    hermes = HermesClinicalConsultant(kb_name="mock")
     
     # Opcional: Forçar reingestão se houver novos arquivos
     # hermes.vector_db.load_or_create(force_reingest=False)

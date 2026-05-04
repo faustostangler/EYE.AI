@@ -107,40 +107,38 @@ st.markdown("""
 
 
 # ─────────────────────────────────────────────
-# Session State Initialization
+# Sidebar & State Management
 # ─────────────────────────────────────────────
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
-if "hermes" not in st.session_state:
-    # Use st.status for a premium DX during initialization
-    with st.status("🩺 Inicializando Hermes...", expanded=True) as status:
-        st.write("Configurando adaptadores de IA...")
-        hermes = HermesClinicalConsultant()
-        
-        # Check if ingestion is needed immediately (First Run fix)
-        db_exists = os.path.exists(settings.VECTOR_DB_PATH)
-        if not db_exists:
-            st.write("📚 Base de protocolos não encontrada. Iniciando ingestão...")
-            hermes.vector_db.load_or_create()
-            st.write("✅ Ingestão concluída!")
-        else:
-            st.write("✅ Memória de protocolos carregada.")
-            
-        st.session_state.hermes = hermes
-        status.update(label="🩺 Hermes pronto!", state="complete", expanded=False)
+# Discover Knowledge Bases
+docs_rag_dir = os.path.join(os.path.dirname(settings._BASE_DIR), "docs", "rag")
+available_kbs = [d for d in os.listdir(docs_rag_dir) if os.path.isdir(os.path.join(docs_rag_dir, d))]
+if not available_kbs:
+    available_kbs = ["mock"]
 
-if "conversation_context" not in st.session_state:
-    st.session_state.conversation_context = ""
+if "current_kb" not in st.session_state:
+    st.session_state.current_kb = available_kbs[0]
 
-
-# ─────────────────────────────────────────────
-# Sidebar
-# ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("# 🩺 Hermes")
     st.caption("Clinical Decision Support")
     st.divider()
+
+    # KB Selection
+    selected_kb = st.selectbox(
+        "📚 Knowledge Base", 
+        available_kbs, 
+        index=available_kbs.index(st.session_state.current_kb) if st.session_state.current_kb in available_kbs else 0
+    )
+
+    # Detect KB change
+    if selected_kb != st.session_state.current_kb:
+        st.session_state.current_kb = selected_kb
+        st.session_state.messages = []
+        st.session_state.conversation_context = ""
+        if "hermes" in st.session_state:
+            del st.session_state.hermes
+        st.rerun()
 
     st.markdown(f"**Modelo LLM:** `{settings.MODEL_NAME}`")
     st.markdown(f"**Embeddings:** `{settings.EMBEDDING_MODEL_NAME}`")
@@ -149,17 +147,19 @@ with st.sidebar:
     st.divider()
 
     # Vector DB status
-    db_exists = os.path.exists(settings.VECTOR_DB_PATH)
+    db_path = settings.get_db_path(st.session_state.current_kb)
+    db_exists = os.path.exists(db_path)
     if db_exists:
-        st.success("🟢 Vector DB loaded", icon="✅")
+        st.success(f"🟢 DB loaded ({st.session_state.current_kb})", icon="✅")
     else:
-        st.warning("🟡 Vector DB not found — will ingest on first query", icon="⚠️")
+        st.warning(f"🟡 DB not found ({st.session_state.current_kb})", icon="⚠️")
 
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 Re-ingest", use_container_width=True):
-            with st.spinner("Ingesting documents..."):
-                st.session_state.hermes.vector_db.load_or_create(force_reingest=True)
+            with st.spinner(f"Ingesting {st.session_state.current_kb}..."):
+                if "hermes" in st.session_state:
+                    st.session_state.hermes.vector_db.load_or_create(force_reingest=True)
             st.success("Done!")
             st.rerun()
     with col2:
@@ -171,7 +171,7 @@ with st.sidebar:
     st.divider()
 
     # Token usage DX metric
-    ctx_tokens = estimate_tokens(st.session_state.conversation_context)
+    ctx_tokens = estimate_tokens(st.session_state.get("conversation_context", ""))
     budget = settings.HISTORY_TOKEN_BUDGET
     pct = min(int((ctx_tokens / budget) * 100), 100) if budget else 0
     st.markdown(f"🧠 **Memory:** `{ctx_tokens}/{budget}` tokens ({pct}%)")
@@ -179,6 +179,32 @@ with st.sidebar:
 
     st.divider()
     st.caption("Playground · EYE.AI")
+
+
+# ─────────────────────────────────────────────
+# Session State Initialization (Hermes)
+# ─────────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "conversation_context" not in st.session_state:
+    st.session_state.conversation_context = ""
+
+if "hermes" not in st.session_state:
+    with st.status(f"🩺 Inicializando Hermes ({st.session_state.current_kb})...", expanded=True) as status:
+        st.write("Configurando adaptadores de IA...")
+        hermes = HermesClinicalConsultant(kb_name=st.session_state.current_kb)
+        
+        db_path = settings.get_db_path(st.session_state.current_kb)
+        if not os.path.exists(db_path):
+            st.write(f"📚 Base {st.session_state.current_kb} não encontrada. Iniciando ingestão...")
+            hermes.vector_db.load_or_create()
+            st.write("✅ Ingestão concluída!")
+        else:
+            st.write("✅ Memória de protocolos carregada.")
+            
+        st.session_state.hermes = hermes
+        status.update(label=f"🩺 Hermes pronto ({st.session_state.current_kb})!", state="complete", expanded=False)
 
 
 # ─────────────────────────────────────────────

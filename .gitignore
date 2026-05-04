@@ -172,3 +172,7 @@ docs/rag/
 models/
 chroma_db_hermes/
 playground/chroma_db_hermes/
+
+# ignore all ogg files in playground
+playground/*/*.ogg
+

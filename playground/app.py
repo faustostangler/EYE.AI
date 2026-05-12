@@ -11,6 +11,8 @@ import json
 import tempfile
 import glob
 import re
+import time
+import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,8 +39,10 @@ class Settings(BaseSettings):
     MODEL_NAME: str = Field(default="gemma4:e4b", validation_alias="LLM_MODEL_PATH")
     EMBEDDING_MODEL_NAME: str = Field(default="nomic-embed-text", validation_alias="EMBEDDING_MODEL_NAME")
     WHISPER_MODEL: str = Field(default="small", validation_alias="WHISPER_MODEL_NAME")
-    DEVICE: str = "cpu" # Força CPU para evitar conflito de VRAM com Ollama
+    DEVICE: str = "cpu" # Força CPU para o Whisper para evitar conflito de VRAM com Ollama
     COMPUTE_TYPE: str = "int8"
+    OLLAMA_HOST: str = Field(default="http://localhost:11434", validation_alias="OLLAMA_HOST")
+    NUM_GPU: int = Field(default=50, validation_alias="LLM_GPU_LAYERS")
     
     _BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
     
@@ -59,27 +63,44 @@ settings = Settings()
 # Schemas Pydantic
 # ---------------------------------------------------------
 class ElectronicHealthRecord(BaseModel):
-    queixa_principal: str = Field(description="O motivo principal da consulta")
-    historia_doenca_atual: str = Field(description="Histórico detalhado da queixa")
-    sintomas: list[str] = Field(description="Lista de sintomas mencionados")
-    exames_solicitados: list[str] = Field(description="Exames pedidos pelo médico")
-    diagnostico_hipotese: str = Field(description="Hipótese diagnóstica ou diagnóstico confirmado")
-    conduta_tratamento: str = Field(description="Conduta, tratamento ou medicamentos prescritos")
-    especialidade: str = Field(description="Especialidade do caso: 'strabismus' ou 'mock'")
+    queixa_principal: str = Field(default="", description="O motivo principal da consulta")
+    historia_doenca_atual: str = Field(default="", description="Histórico detalhado da queixa")
+    sintomas: list[str] = Field(default_factory=list, description="Lista de sintomas mencionados")
+    exames_solicitados: list[str] = Field(default_factory=list, description="Exames pedidos pelo médico")
+    diagnostico_hipotese: str = Field(default="", description="Hipótese diagnóstica ou diagnóstico confirmado")
+    conduta_tratamento: str = Field(default="", description="Conduta, tratamento ou medicamentos prescritos")
+    especialidade: str = Field(default="mock", description="Especialidade do caso: 'strabismus' ou 'mock'")
 
     @field_validator("queixa_principal", "historia_doenca_atual", "diagnostico_hipotese", "conduta_tratamento", "especialidade", mode="before")
     @classmethod
     def cast_to_string(cls, v):
-        if isinstance(v, list):
+        if v is None:
+            return ""
+        if isinstance(v, (list, tuple)):
             return " ".join(str(item) for item in v)
-        return v if v is not None else ""
+        if isinstance(v, dict):
+            # Tenta extrair um campo de texto principal se o LLM alucinou um objeto
+            return v.get("descricao") or v.get("texto") or json.dumps(v, ensure_ascii=False)
+        return str(v)
 
     @field_validator("sintomas", "exames_solicitados", mode="before")
     @classmethod
     def cast_to_list(cls, v):
-        if isinstance(v, str):
-            return [v]
-        return v if v is not None else []
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            v = [v]
+        
+        processed = []
+        for item in v:
+            if isinstance(item, dict):
+                # Extração defensiva: tenta campos comuns, senão serializa para não perder info
+                text = item.get("nome") or item.get("sintoma") or item.get("exame") or json.dumps(item, ensure_ascii=False)
+                processed.append(str(text))
+            elif item is not None:
+                processed.append(str(item))
+        return processed
+
 
 # ---------------------------------------------------------
 # Cache de Modelos e Motores
@@ -89,8 +110,14 @@ def get_whisper():
     return WhisperModel(settings.WHISPER_MODEL, device=settings.DEVICE, compute_type=settings.COMPUTE_TYPE)
 
 @st.cache_resource
-def get_llm():
-    return OllamaLLM(model=settings.MODEL_NAME, temperature=0.0)
+def get_llm(model_name: str = None):
+    target_model = model_name or settings.MODEL_NAME
+    return OllamaLLM(
+        model=target_model, 
+        base_url=settings.OLLAMA_HOST,
+        num_gpu=settings.NUM_GPU,
+        temperature=0.0
+    )
 
 @st.cache_resource
 def get_embeddings():
@@ -148,11 +175,12 @@ def get_vector_db(kb_name: str, force_reindex: bool = False):
 class VisioChatHermesService:
     def __init__(self, kb_name: str):
         self.kb_name = kb_name
-        self.llm = get_llm()
-        self.embeddings = get_embeddings()
-        
         # Carrega o banco via cache global
         self.db = get_vector_db(kb_name)
+        
+        # O LLM agora é carregado via settings.MODEL_NAME por padrão no RAG
+        # mas no Playground Visio-Scribe ele pode ser dinâmico.
+        self.llm = get_llm(settings.MODEL_NAME)
         
         self.prompt = PromptTemplate.from_template("""
             Você é o Visio-Chat Hermes, um sistema de suporte à decisão clínica com RIGOR ABSOLUTO.
@@ -216,7 +244,7 @@ def transcribe_audio(file_path):
 st.set_page_config(page_title="EYE.AI Dashboard", layout="wide", page_icon="👁️")
 
 st.sidebar.title("👁️ EYE.AI Dashboard")
-service = st.sidebar.radio("Navegação:", ["🛡️ Visio-Chat Hermes", "🩺 Visio-Scribe Jonathan"])
+service = st.sidebar.radio("Navegação:", ["🛡️ Visio-Chat Hermes", "🩺 Visio-Scribe Jonathan"], index=1)
 
 # --- VISIO-CHAT HERMES ---
 if service == "🛡️ Visio-Chat Hermes":
@@ -290,85 +318,147 @@ if service == "🛡️ Visio-Chat Hermes":
                     st.divider()
         st.session_state.messages.append({"role": "assistant", "content": res})
 
-# --- VISIO-SCRIBE JONATHAN ---
+    # --- VISIO-SCRIBE JONATHAN ---
 elif service == "🩺 Visio-Scribe Jonathan":
     st.title("🩺 Visio-Scribe Jonathan")
     st.markdown("Gravação de consulta e geração automática de Prontuário Eletrônico.")
     
-    col_input, col_out = st.columns(2)
-    
-    with col_input:
-        audio_data = st.audio_input("Grave a consulta (ou use o ícone de pasta para Upload)")
-        if audio_data:
-            audio_id = hash(audio_data.getvalue())
-            # Se for áudio novo, limpa o estado anterior
-            if st.session_state.get("last_audio_id") != audio_id:
-                st.session_state.last_audio_id = audio_id
-                keys_to_clear = ["last_transcript", "last_ehr", "last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]
-                for k in keys_to_clear:
+    audio_data = st.audio_input("Grave a consulta (ou use o ícone de pasta para Upload)")
+    if audio_data:
+        audio_id = hash(audio_data.getvalue())
+        # Se for áudio novo, limpa o estado anterior
+        if st.session_state.get("last_audio_id") != audio_id:
+            st.session_state.last_audio_id = audio_id
+            keys_to_clear = ["last_transcript", "last_ehr", "last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]
+            for k in keys_to_clear:
+                if k in st.session_state: del st.session_state[k]
+
+        # Etapa 1: Transcrição do Áudio
+        with st.expander("🎧 Transcrição do Áudio", expanded=("last_transcript" not in st.session_state)):
+            if "last_transcript" not in st.session_state:
+                with st.spinner("🎧 Transcrevendo áudio..."):
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                        tmp.write(audio_data.getvalue())
+                        path = tmp.name
+                    text = transcribe_audio(path)
+                    os.remove(path)
+                    st.session_state.last_transcript = text
+            st.write(st.session_state.last_transcript)
+
+        # Etapa 2: Configuração de Inferência & Benchmarking
+        if "last_transcript" in st.session_state:
+            with st.container(border=True):
+                st.subheader("⚙️ Configuração de Inferência & Benchmarking")
+                
+                # Descoberta de modelos
+                try:
+                    models_info = ollama.list()
+                    available_models = [m['name'] for m in models_info.get('models', []) if 'embed' not in m['name']]
+                except:
+                    available_models = [settings.MODEL_NAME]
+                
+                col_mod, col_bench = st.columns([1, 1.5])
+                
+                with col_mod:
+                    current_model = st.selectbox(
+                        "Selecionar LLM para Extração:", 
+                        available_models, 
+                        index=available_models.index(settings.MODEL_NAME) if settings.MODEL_NAME in available_models else 0,
+                        key="selected_jonathan_model"
+                    )
+                    
+                    if st.button("🚀 Processar/Re-processar Prontuário", use_container_width=True):
+                        if "last_ehr" in st.session_state: del st.session_state.last_ehr
+                        st.rerun()
+
+                with col_bench:
+                    if "inference_history" not in st.session_state:
+                        st.session_state.inference_history = []
+                    
+                    if st.session_state.inference_history:
+                        st.write("**Histórico de Performance (Latência):**")
+                        df_history = pd.DataFrame(st.session_state.inference_history)
+                        st.dataframe(df_history, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhuma inferência realizada ainda para este áudio.")
+
+        # Etapa 3: Prontuário Estruturado
+        with st.expander("📝 Prontuário Estruturado (Inferência)", expanded=("last_ehr" not in st.session_state and "last_transcript" in st.session_state)):
+            if "last_ehr" not in st.session_state and "last_transcript" in st.session_state:
+                # Limpeza preventiva de estados subsequentes
+                for k in ["last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]:
                     if k in st.session_state: del st.session_state[k]
-
-            # Etapa: Transcrição do Áudio
-            with st.expander("Transcrição do Áudio", expanded=("last_transcript" not in st.session_state)):
-                if "last_transcript" not in st.session_state:
-                    with st.spinner("🎧 Transcrevendo áudio..."):
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                            tmp.write(audio_data.getvalue())
-                            path = tmp.name
-                        text = transcribe_audio(path)
-                        os.remove(path)
-                        st.session_state.last_transcript = text
-                st.write(st.session_state.last_transcript)
-
-            # Etapa: Prontuário Estruturado
-            with st.expander("Prontuário Estruturado", expanded=("last_ehr" not in st.session_state and "last_transcript" in st.session_state)):
-                if "last_ehr" not in st.session_state and "last_transcript" in st.session_state:
-                    with st.spinner("📝 Organizando informações..."):
-                        prompt = f"Extraia um Prontuário JSON desta consulta: {st.session_state.last_transcript}. Use a estrutura: queixa_principal, historia_doenca_atual, sintomas[], exames_solicitados[], diagnostico_hipotese, conduta_tratamento e especialidade (decida entre 'strabismus' ou 'mock')."
-                        res = get_llm().invoke(prompt)
+                
+                with st.spinner(f"📝 Organizando informações com {st.session_state.get('selected_jonathan_model', settings.MODEL_NAME)}..."):
+                    start_time = time.perf_counter()
+                    
+                    active_model = st.session_state.get("selected_jonathan_model", settings.MODEL_NAME)
+                    prompt = f"Extraia um Prontuário JSON desta consulta: {st.session_state.last_transcript}. Use a estrutura: queixa_principal, historia_doenca_atual, sintomas[], exames_solicitados[], diagnostico_hipotese, conduta_tratamento e especialidade (decida entre 'strabismus' ou 'mock')."
+                    
+                    try:
+                        res = get_llm(active_model).invoke(prompt)
+                        duration = time.perf_counter() - start_time
+                        
                         match = re.search(r'\{.*\}', res, re.DOTALL)
                         if match:
                             data = json.loads(match.group(0))
                             ehr = ElectronicHealthRecord(**data)
                             st.session_state.last_ehr = ehr.model_dump()
-                            st.session_state.temp_data = data # Auxiliar para a próxima etapa
-                if "last_ehr" in st.session_state:
-                    st.success("✅ Informações extraídas e validadas.")
+                            st.session_state.temp_data = data
+                            
+                            # Registra no histórico
+                            st.session_state.inference_history.append({
+                                "Modelo": active_model,
+                                "Tempo (s)": f"{duration:.2f}s",
+                                "Status": "✅ Sucesso"
+                            })
+                        else:
+                            st.error("LLM não retornou um JSON válido.")
+                            st.session_state.inference_history.append({
+                                "Modelo": active_model,
+                                "Tempo (s)": f"{duration:.2f}s",
+                                "Status": "❌ Erro JSON"
+                            })
+                    except Exception as e:
+                        st.error(f"Erro na inferência: {e}")
+                        st.session_state.inference_history.append({
+                            "Modelo": active_model,
+                            "Tempo (s)": "-",
+                            "Status": f"❌ Erro: {type(e).__name__}"
+                        })
+            
+            if "last_ehr" in st.session_state:
+                st.subheader("📋 Prontuário Gerado")
+                st.json(st.session_state.last_ehr)
 
-            # Etapa: Consulta ao Especialista
-            with st.expander("Consulta ao Especialista", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):
-                if "last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state:
-                    with st.spinner("🗣️ Consultando Visio-Chat Hermes..."):
-                        data = st.session_state.get("temp_data", {})
-                        chosen_kb = data.get("especialidade", "mock").lower()
-                        chosen_kb = "strabismus" if "strabismus" in chosen_kb else "mock"
-                        
-                        v_service = VisioChatHermesService(chosen_kb)
-                        v_prompt = f"Atue como especialista. Avalie o seguinte prontuário: {json.dumps(st.session_state.last_ehr)}"
-                        v_res, v_docs = v_service.ask(v_prompt, search_query=st.session_state.last_ehr.get("diagnostico_hipotese"))
-                        
-                        st.session_state.last_visio_chat_hermes_opinion = v_res
-                        st.session_state.last_visio_chat_hermes_kb = chosen_kb
-                        st.session_state.last_visio_chat_hermes_docs = v_docs
-                        st.rerun() # Rerun final para atualizar o painel da direita
-                
-                if "last_visio_chat_hermes_opinion" in st.session_state:
-                    st.write(f"Especialidade: **{st.session_state.last_visio_chat_hermes_kb}**")
-                    st.success("✅ Parecer técnico gerado.")
-                        
-    with col_out:
-        if "last_ehr" in st.session_state:
-            st.success("✅ Prontuário Gerado")
-            st.json(st.session_state.last_ehr)
+        # Etapa 3: Consulta ao Especialista
+        with st.expander("🗣️ Consulta ao Especialista (RAG)", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):
+            if "last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state:
+                # Limpeza preventiva do parecer anterior
+                for k in ["last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]:
+                    if k in st.session_state: del st.session_state[k]
+
+                with st.spinner("🗣️ Consultando Visio-Chat Hermes..."):
+                    data = st.session_state.get("temp_data", {})
+                    chosen_kb = data.get("especialidade", "mock").lower()
+                    chosen_kb = "strabismus" if "strabismus" in chosen_kb else "mock"
+                    
+                    v_service = VisioChatHermesService(chosen_kb)
+                    v_prompt = f"Atue como especialista. Avalie o seguinte prontuário: {json.dumps(st.session_state.last_ehr)}"
+                    v_res, v_docs = v_service.ask(v_prompt, search_query=st.session_state.last_ehr.get("diagnostico_hipotese"))
+                    
+                    st.session_state.last_visio_chat_hermes_opinion = v_res
+                    st.session_state.last_visio_chat_hermes_kb = chosen_kb
+                    st.session_state.last_visio_chat_hermes_docs = v_docs
+                    st.rerun() 
             
             if "last_visio_chat_hermes_opinion" in st.session_state:
-                st.markdown("---")
                 st.subheader(f"🗣️ Opinião do Especialista (Base: {st.session_state.last_visio_chat_hermes_kb})")
                 st.info(st.session_state.last_visio_chat_hermes_opinion)
-                with st.expander("📄 Fontes e Contextos Consultados pelo Visio-Chat Hermes"):
+                with st.expander("📄 Fontes e Contextos Consultados"):
                     for d in st.session_state.last_visio_chat_hermes_docs:
                         st.markdown(f"**Fonte:** `{os.path.basename(d.metadata.get('source', ''))}`")
                         st.caption(d.page_content)
                         st.divider()
-        else:
-            st.info("O prontuário estruturado e a opinião do especialista aparecerão aqui.")
+    else:
+        st.info("Aguardando gravação de áudio para iniciar o processo.")

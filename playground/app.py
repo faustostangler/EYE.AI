@@ -225,7 +225,7 @@ class VisioChatHermesService:
         with st.expander("🔍 Debug de Recuperação"):
             st.write(f"**Query Original:** {query}")
             st.write(f"**Query Otimizada:** {search_query}")
-            st.write(f"**Documentos Encontrados:** {len(docs)}")
+            st.write(f"**Snippets Encontrados:** {len(docs)}")
             
         chain = self.prompt | self.llm
         return chain.invoke({"contexto": contexto, "pergunta": query}), docs
@@ -329,9 +329,11 @@ elif service == "🩺 Visio-Scribe Jonathan":
         # Se for áudio novo, limpa o estado anterior
         if st.session_state.get("last_audio_id") != audio_id:
             st.session_state.last_audio_id = audio_id
-            keys_to_clear = ["last_transcript", "last_ehr", "last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]
+            keys_to_clear = ["last_transcript", "last_ehr", "last_inference_error", "last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs", "inference_history"]
             for k in keys_to_clear:
                 if k in st.session_state: del st.session_state[k]
+            st.session_state.trigger_jonathan_inference = True
+
 
         # Etapa 1: Transcrição do Áudio
         with st.expander("🎧 Transcrição do Áudio", expanded=("last_transcript" not in st.session_state)):
@@ -350,8 +352,9 @@ elif service == "🩺 Visio-Scribe Jonathan":
             with st.expander("⚙️ Configuração de Inferência & Benchmarking", expanded=True):
                 # Descoberta de modelos e fallback para modelos rápidos (SOTA)
                 preferred_fast_models = [
-                    "deepseek-v4:flash", "phi3:mini", "gemma3:1b", "gemma3:270m", 
-                    "smollm3:3b", "qwen3.5:4b", "phi4-mini", "gemma4:e4b"
+                    "phi3:mini", "qwen3.5:4b", "gemma4:e4b", "gemma3:270m", 
+                    "gemma3:4b-it-qat", "gemma4:e2b", "gemma:2b", 
+                    "llama3:latest", "deepseek-r1:7b"
                 ]
                 try:
                     models_info = ollama.list()
@@ -368,16 +371,20 @@ elif service == "🩺 Visio-Scribe Jonathan":
                 col_mod, col_spacer = st.columns([1, 2])
                 
                 with col_mod:
+                    def trigger_new_inference():
+                        st.session_state.trigger_jonathan_inference = True
+                        if "last_ehr" in st.session_state: del st.session_state.last_ehr
+                        if "last_inference_error" in st.session_state: del st.session_state.last_inference_error
+
                     current_model = st.selectbox(
                         "Selecionar LLM para Extração:", 
                         available_models, 
                         index=available_models.index(settings.MODEL_NAME) if settings.MODEL_NAME in available_models else 0,
-                        key="selected_jonathan_model"
+                        key="selected_jonathan_model",
+                        on_change=trigger_new_inference
                     )
-                    
-                    if st.button("🚀 Processar/Re-processar Prontuário", use_container_width=True):
-                        if "last_ehr" in st.session_state: del st.session_state.last_ehr
-                        st.rerun()
+
+
 
                 # Histórico de Performance posicionado ABAIXO
                 st.write("---")
@@ -386,61 +393,102 @@ elif service == "🩺 Visio-Scribe Jonathan":
                     st.session_state.inference_history = []
                 
                 if st.session_state.inference_history:
-                    df_history = pd.DataFrame(st.session_state.inference_history)
-                    st.table(df_history)
+                    # Renderiza tudo em um único bloco HTML para remover o padding entre linhas do Streamlit
+                    history_html = "".join([
+                        f"<div style='font-size: 0.85rem; line-height: 1.2; margin-bottom: 2px;'>"
+                        f"{e['Modelo']} · <b>{e['Tempo (s)']}</b> · {e['Status']}</div>" 
+                        for e in st.session_state.inference_history
+                    ])
+                    st.markdown(history_html, unsafe_allow_html=True)
+
                 else:
                     st.info("Aguardando a primeira inferência para registrar performance.")
 
 
 
+
+
         # Etapa 3: Prontuário Estruturado
-        with st.expander("📝 Prontuário Estruturado (Inferência)", expanded=("last_ehr" not in st.session_state and "last_transcript" in st.session_state)):
-            if "last_ehr" not in st.session_state and "last_transcript" in st.session_state:
+        should_run = st.session_state.get("trigger_jonathan_inference", False) and "last_transcript" in st.session_state
+        
+        with st.expander("📝 Prontuário Estruturado (Inferência)", expanded=(should_run or "last_ehr" in st.session_state or "last_inference_error" in st.session_state)):
+            if should_run:
+                # Consome o trigger para evitar loop
+                st.session_state.trigger_jonathan_inference = False
+                
                 # Limpeza preventiva de estados subsequentes
+
                 for k in ["last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]:
                     if k in st.session_state: del st.session_state[k]
                 
                 with st.spinner(f"📝 Organizando informações com {st.session_state.get('selected_jonathan_model', settings.MODEL_NAME)}..."):
+                    active_model = st.session_state.get("selected_jonathan_model", settings.MODEL_NAME)
                     start_time = time.perf_counter()
                     
-                    active_model = st.session_state.get("selected_jonathan_model", settings.MODEL_NAME)
-                    prompt = f"Extraia um Prontuário JSON desta consulta: {st.session_state.last_transcript}. Use a estrutura: queixa_principal, historia_doenca_atual, sintomas[], exames_solicitados[], diagnostico_hipotese, conduta_tratamento e especialidade (decida entre 'strabismus' ou 'mock')."
-                    
                     try:
-                        res = get_llm(active_model).invoke(prompt)
+                        # Prompt mais rigoroso para forçar JSON puro
+                        prompt = (
+                            f"Instrução: Extraia as informações clínicas da transcrição abaixo para o formato JSON.\n"
+                            f"Estrutura esperada: queixa_principal, historia_doenca_atual, sintomas (lista), exames_solicitados (lista), diagnostico_hipotese, conduta_tratamento e especialidade ('strabismus' ou 'mock').\n"
+                            f"IMPORTANTE: Retorne APENAS o objeto JSON. Não adicione comentários, introduções ou blocos de código markdown.\n\n"
+                            f"Transcrição: {st.session_state.last_transcript}"
+                        )
+                        
+                        # Chamada do LLM
+                        res = get_llm(active_model).invoke(prompt).strip()
                         duration = time.perf_counter() - start_time
                         
-                        match = re.search(r'\{.*\}', res, re.DOTALL)
+                        # Limpeza defensiva do output (remove blocos de código se existirem)
+                        json_str = res
+                        if "```json" in json_str:
+                            json_str = json_str.split("```json")[1].split("```")[0]
+                        elif "```" in json_str:
+                            json_str = json_str.split("```")[1].split("```")[0]
+                            
+                        # Tenta encontrar o primeiro { e o último } caso ainda haja texto em volta
+                        match = re.search(r'(\{.*\})', json_str, re.DOTALL)
                         if match:
-                            data = json.loads(match.group(0))
+                            json_payload = match.group(1)
+                            data = json.loads(json_payload)
                             ehr = ElectronicHealthRecord(**data)
                             st.session_state.last_ehr = ehr.model_dump()
                             st.session_state.temp_data = data
                             
-                            # Registra no histórico
                             st.session_state.inference_history.append({
                                 "Modelo": active_model,
                                 "Tempo (s)": f"{duration:.2f}s",
                                 "Status": "✅ Sucesso"
                             })
                         else:
-                            st.error("LLM não retornou um JSON válido.")
+                            # Se falhou o regex, tenta dar o parse no que sobrou
+                            data = json.loads(json_str)
+                            ehr = ElectronicHealthRecord(**data)
+                            st.session_state.last_ehr = ehr.model_dump()
+                            st.session_state.temp_data = data
                             st.session_state.inference_history.append({
-                                "Modelo": active_model,
-                                "Tempo (s)": f"{duration:.2f}s",
-                                "Status": "❌ Erro JSON"
+                                "Modelo": active_model, "Tempo (s)": f"{duration:.2f}s", "Status": "✅ Sucesso"
                             })
                     except Exception as e:
-                        st.error(f"Erro na inferência: {e}")
+                        duration = time.perf_counter() - start_time
+                        # Se ainda assim falhou o JSON, registra o erro específico
+                        error_type = "Erro JSON" if isinstance(e, (json.JSONDecodeError, ValueError)) else type(e).__name__
                         st.session_state.inference_history.append({
                             "Modelo": active_model,
-                            "Tempo (s)": "-",
-                            "Status": f"❌ Erro: {type(e).__name__}"
+                            "Tempo (s)": f"{duration:.2f}s",
+                            "Status": f"❌ {error_type}"
                         })
+                        st.session_state.last_inference_error = f"**Falha na Extração ({error_type}):**\n{e}\n\n**Resposta Bruta do LLM:**\n```text\n{res if 'res' in locals() else 'Nenhuma resposta gerada'}\n```"
+
+                    
+                    st.rerun() # Força atualização da UI para mostrar o histórico imediatamente
+
             
             if "last_ehr" in st.session_state:
                 st.subheader("📋 Prontuário Gerado")
                 st.json(st.session_state.last_ehr)
+            elif "last_inference_error" in st.session_state:
+                st.subheader("⚠️ Erro de Inferência")
+                st.error(st.session_state.last_inference_error)
 
         # Etapa 3: Consulta ao Especialista
         with st.expander("🗣️ Consulta ao Especialista (RAG)", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):

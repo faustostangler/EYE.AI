@@ -347,17 +347,25 @@ elif service == "🩺 Visio-Scribe Jonathan":
 
         # Etapa 2: Configuração de Inferência & Benchmarking
         if "last_transcript" in st.session_state:
-            with st.container(border=True):
-                st.subheader("⚙️ Configuração de Inferência & Benchmarking")
-                
-                # Descoberta de modelos
+            with st.expander("⚙️ Configuração de Inferência & Benchmarking", expanded=True):
+                # Descoberta de modelos e fallback para modelos rápidos (SOTA)
+                preferred_fast_models = [
+                    "deepseek-v4:flash", "phi3:mini", "gemma3:1b", "gemma3:270m", 
+                    "smollm3:3b", "qwen3.5:4b", "phi4-mini", "gemma4:e4b"
+                ]
                 try:
                     models_info = ollama.list()
-                    available_models = [m['name'] for m in models_info.get('models', []) if 'embed' not in m['name']]
+                    installed_models = [m['name'] for m in models_info.get('models', []) if 'embed' not in m['name']]
+                    # Mostra instalados primeiro, seguidos pelos preferidos que talvez não estejam na lista
+                    available_models = sorted(list(set(installed_models + preferred_fast_models)))
                 except:
-                    available_models = [settings.MODEL_NAME]
+                    available_models = preferred_fast_models
                 
-                col_mod, col_bench = st.columns([1, 1.5])
+                # Garantir que o modelo padrão do settings está na lista
+                if settings.MODEL_NAME not in available_models:
+                    available_models.append(settings.MODEL_NAME)
+
+                col_mod, col_spacer = st.columns([1, 2])
                 
                 with col_mod:
                     current_model = st.selectbox(
@@ -371,16 +379,19 @@ elif service == "🩺 Visio-Scribe Jonathan":
                         if "last_ehr" in st.session_state: del st.session_state.last_ehr
                         st.rerun()
 
-                with col_bench:
-                    if "inference_history" not in st.session_state:
-                        st.session_state.inference_history = []
-                    
-                    if st.session_state.inference_history:
-                        st.write("**Histórico de Performance (Latência):**")
-                        df_history = pd.DataFrame(st.session_state.inference_history)
-                        st.dataframe(df_history, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Nenhuma inferência realizada ainda para este áudio.")
+                # Histórico de Performance posicionado ABAIXO
+                st.write("---")
+                st.write("**📊 Benchmarking de Inferência (Cumulativo)**")
+                if "inference_history" not in st.session_state:
+                    st.session_state.inference_history = []
+                
+                if st.session_state.inference_history:
+                    df_history = pd.DataFrame(st.session_state.inference_history)
+                    st.table(df_history)
+                else:
+                    st.info("Aguardando a primeira inferência para registrar performance.")
+
+
 
         # Etapa 3: Prontuário Estruturado
         with st.expander("📝 Prontuário Estruturado (Inferência)", expanded=("last_ehr" not in st.session_state and "last_transcript" in st.session_state)):

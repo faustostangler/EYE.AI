@@ -11,9 +11,10 @@ This skill acts as an ALWAYS-ON Active Governance Layer. It continuously monitor
 
 ## 1. Phase A: Inspector (Contextual Discovery)
 For every task (whether writing new code or analyzing existing code), you must inspect the knowledge base to find the relevant guidelines. 
-The knowledge base is located at: `/references/`
-
-Determine the nature of the task and use the `grep_search` or `list_dir` tools to find and read the 3-5 most relevant reference documents within the appropriate category:
+1.  **Inspector Phase**:
+    *   The agent MUST first perform a `grep_search` on `/.agents/skills/stangler-blueprint/references/references_index.md` or `references_index.json` to identify the most relevant governance documents for the current task.
+    *   The agent MUST read the identified reference files from `/.agents/skills/stangler-blueprint/references/` BEFORE analyzing or modifying any code.
+Once identified, read the 3-5 most relevant reference documents from their respective categories:
 *   **Engineering Tasks** (e.g., Modular Monolith, DDD, Hexagonal Architecture, new microservices, code review): Look in `1.1. Product Engineering/`
 *   **Cloud & Cost Tasks** (e.g., Infrastructure, Database selection, Unit Economics): Look in `1.2. FinOps & Cloud Economics/`
 *   **Documentation Tasks** (e.g., ADRs, C4 Model, Team APIs): Look in `1.3. Knowledge Management & Documentation/`

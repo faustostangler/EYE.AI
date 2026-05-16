@@ -1,0 +1,11 @@
+---
+name: 2026-05-12 Software Architecture as Living Documentation Series Index Post | by Nick Tune | Nick Tune’s weird ideas | Medium
+keywords: (placeholder)
+metadata:
+  url: None
+  source: SOURCE_TYPE_TEXT
+  date: 2026-05-16T15:32:01.632Z
+  notebook: 1.3. Knowledge Management & Documentation
+---
+2026-05-12 Software Architecture as Living Documentation Series Index Post | by Nick Tune | Nick Tune’s weird ideas | Medium
+WebSync metadata title: Software Architecture as Living Documentation Series Index Post | by Nick Tune | Nick Tune’s weird ideas | Medium url: https://medium.com/nick-tune-tech-strategy-blog/software-architecture-as-living-documentation-series-index-post-9f5ff1d3dc07 date: 2026-05-12T23:55:42.047Z parsing method: defuddle Sitemap Nick Tune’s weird ideas Domain-Driven Design, Organization Design, Continuous Delivery Press enter or click to view image in full size This is a series of posts exploring how to automatically extract software architecture and domain concepts from a codebase to have 100% reliable living documentation across a whole system. Reverse Engineering your Software Architecture with Claude Code to Help Claude Code — this post used an LLM brute force approach to demonstrate what’s possible and the value living documentation provides to humans and AI Extracting your software architecture with ts-morph — how to extract concepts from your codebase like entities, repositories, and domain events Enterprise-wide Software Architecture as DDD Living Documentation — a high level view of the architecture required to make this work at an enterprise scale Defining a DSL for Extracting Software Architecture as Living Documentation — how to simplify and standardize the extraction of information from codebases usins DSL and published languages Enforcing Software Architecture Living Documentation Conventions  — how to use tools like ESLint to enforce architectural standards so that information extracted is reliable Published in Nick Tune’s weird ideas 3K followers Last published Mar 1, 2026 Domain-Driven Design, Organization Design, Continuous Delivery Author of Architecture Modernization (Manning) and legacy-modernization.io. Find me on BlueSky: nick-tune.me and LinkedIn: /in/nick-tune

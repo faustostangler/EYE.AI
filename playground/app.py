@@ -491,7 +491,7 @@ elif service == "🩺 Visio-Scribe Jonathan":
                 st.error(st.session_state.last_inference_error)
 
         # Etapa 3: Consulta ao Especialista
-        with st.expander("🗣️ Consulta ao Especialista (RAG)", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):
+        with st.expander("🗣️ Consulta ao Preceptor (Visio-Chat Hermes)", expanded=("last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state)):
             if "last_visio_chat_hermes_opinion" not in st.session_state and "last_ehr" in st.session_state:
                 # Limpeza preventiva do parecer anterior
                 for k in ["last_visio_chat_hermes_opinion", "last_visio_chat_hermes_kb", "last_visio_chat_hermes_docs"]:

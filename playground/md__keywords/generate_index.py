@@ -15,21 +15,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # Configuration
 REFERENCES_DIR = Path('/home/stangler/Documents/Python/EYE.AI/.agents/skills/stangler-blueprint/references')
 INDEX_OUTPUT_JSON = REFERENCES_DIR / 'references_index.json'
-INDEX_OUTPUT_MD = REFERENCES_DIR / 'references_index.md'
-CANONICAL_KEYWORDS_FILE = REFERENCES_DIR / 'canonical_keywords.json'
-
-def load_canonical_list() -> list:
-    if CANONICAL_KEYWORDS_FILE.exists():
-        try:
-            with open(CANONICAL_KEYWORDS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if isinstance(data, list) else []
-        except Exception as e:
-            return []
-    return []
-
-
-CANONICAL_LIST = load_canonical_list()
+CANONICAL_LIST = []
 
 def set_nested(data: dict, keys: list, value: any):
     """Sets a value in a nested dictionary, creating intermediate dicts if needed."""
@@ -92,19 +78,19 @@ Text:
                 {"role": "user", "content": raw_prompt}
             ],
             temperature=0.1,
-            max_tokens=250
+            max_tokens=500
         )
         
         raw_output = raw_response.choices[0].message.content.strip()
         
         raw_keywords = []
-        summary = ""
+        raw_summary = ""
         
         for line in raw_output.split('\n'):
             if line.startswith('KEYWORDS:'):
                 raw_keywords = [k.strip() for k in line.replace('KEYWORDS:', '').split(',') if k.strip()]
             elif line.startswith('SUMMARY:'):
-                summary = line.replace('SUMMARY:', '').strip()
+                raw_summary = line.replace('SUMMARY:', '').strip()
 
         # STAGE 2: Canonical Alignment
         canonical_str = ", ".join(CANONICAL_LIST)
@@ -147,47 +133,13 @@ NEW_CANONICAL: <comma-separated new terms to add to the global list>
                     CANONICAL_LIST.append(term)
             CANONICAL_LIST.sort()
             
-        return {"keywords": raw_keywords, "summary": summary}
+        return {"keywords": raw_keywords, "summary": raw_summary}
     except Exception as e:
         logging.error(f"Error processing {file_path.name}: {e}")
         return {"keywords": [], "summary": "Error processing file."}
 
-def generate_md_index(index_data: dict, output_path: Path):
-    """Generates a Markdown index with an inverted keyword-to-chapter section."""
-    logging.info(f"Updating Markdown Index: {output_path.name}")
-    try:
-        flat_data = flatten_index(index_data)
-        
-        # Build inverted index: keyword -> set of chapters (folders)
-        inverted_index = {}
-        for rel_path, data in flat_data.items():
-            # Chapter is the first part of the path
-            chapter = rel_path.split('/')[0]
-            for kw in data.get('keywords', []):
-                if kw not in inverted_index:
-                    inverted_index[kw] = set()
-                inverted_index[kw].add(chapter)
 
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write("# References Keyword Index\n\n")
-            
-            f.write("## 1. Inverted Keyword Index\n")
-            f.write("Keyword-based mapping to document chapters.\n\n")
-            for kw in sorted(inverted_index.keys()):
-                chapters = sorted(list(inverted_index[kw]))
-                f.write(f"- **{kw}**: {json.dumps(chapters, ensure_ascii=False)}\n")
-            
-            f.write("\n---\n\n")
-            f.write("## 2. Document Details\n")
-            f.write("Detailed metadata for each document.\n\n")
-            for rel_path, data in sorted(flat_data.items()):
-                keywords_str = ", ".join(data.get('keywords', []))
-                summary = data.get('summary', 'No summary available.')
-                f.write(f"### {rel_path}\n")
-                f.write(f"- **Summary**: {summary}\n")
-                f.write(f"- **Keywords**: {keywords_str}\n\n")
-    except Exception as e:
-        logging.error(f"Failed to generate Markdown index: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a keyword index for reference documents.")
     parser.add_argument("--force", action="store_true", help="Force re-indexing of all files, ignoring mtime.")
@@ -197,17 +149,42 @@ def main():
         logging.error(f"References directory not found: {REFERENCES_DIR}")
         return
         
-    index_data = {}
-    # Find all MD files but skip the index itself if it's in the same folder. Sort them for consistent chapter grouping.
-    md_files = sorted([f for f in REFERENCES_DIR.rglob('*.md') if f.name != INDEX_OUTPUT_MD.name])
+    index_data = {"canonical_keywords": [], "index": {}}
+    md_files = sorted([f for f in REFERENCES_DIR.rglob('*.md')])
+    total_files = len(md_files)
     
     # Load existing index for incremental updates
     if INDEX_OUTPUT_JSON.exists():
         try:
             with open(INDEX_OUTPUT_JSON, 'r', encoding='utf-8') as f:
-                index_data = json.load(f)
+                loaded_data = json.load(f)
+                if "index" not in loaded_data and "canonical_keywords" not in loaded_data:
+                    index_data["index"] = loaded_data
+                else:
+                    index_data = loaded_data
         except Exception as e:
             logging.warning(f"Could not load existing JSON index: {e}")
+
+    global CANONICAL_LIST
+    CANONICAL_LIST = index_data.get("canonical_keywords", [])
+
+    # Populate CANONICAL_LIST with all previously extracted keywords from cached files
+    flat_data = flatten_index(index_data["index"])
+    added_count = 0
+    for data in flat_data.values():
+        for kw in data.get('keywords', []):
+            if kw not in CANONICAL_LIST:
+                CANONICAL_LIST.append(kw)
+                added_count += 1
+    if added_count > 0:
+        CANONICAL_LIST.sort()
+        index_data["canonical_keywords"] = CANONICAL_LIST
+        try:
+            with open(INDEX_OUTPUT_JSON, 'w', encoding='utf-8') as f:
+                json.dump(index_data, f, indent=2, ensure_ascii=False)
+            logging.info(f"Loaded and merged {added_count} keywords from existing index into canonical list (Total: {len(CANONICAL_LIST)}).")
+        except Exception as e:
+            logging.error(f"Failed to sync json file at startup: {e}")
 
     logging.info(f"Found {len(md_files)} markdown files to process.")
     
@@ -227,51 +204,51 @@ def main():
             logging.info(f"--- processando {chapter} ---")
             current_chapter = chapter
         
-        # Calculate timing
-        elapsed_sec = time.perf_counter() - start_time
-        avg_time_per_file = elapsed_sec / i if i > 0 else 0
-        total_files = len(md_files)
-        remaining_files = total_files - i
-        eta_sec = avg_time_per_file * remaining_files
-        
-        # Format strings
-        elapsed_str = str(timedelta(seconds=int(elapsed_sec)))
-        eta_str = str(timedelta(seconds=int(eta_sec)))
-        total_time_str = str(timedelta(seconds=int(elapsed_sec + eta_sec)))
-        
-        percent = (i / total_files) * 100
-        progress_prefix = f"[{i}+{remaining_files} {percent:.2f}%] [{elapsed_str}+{eta_str}={total_time_str}]"
-        
         # Check modified time for real incremental updates (nested lookup)
         mtime = file_path.stat().st_mtime
-        existing_meta = get_nested(index_data, path_parts)
+        existing_meta = get_nested(index_data["index"], path_parts)
         if not args.force and existing_meta and existing_meta.get('mtime') == mtime:
-            logging.info(f"{progress_prefix} Skipping (unchanged): {file_path.name}")
+            # For skipped files, calculate progress instantly
+            elapsed_sec = time.perf_counter() - start_time
+            avg_time_per_file = elapsed_sec / i if i > 0 else 0
+            remaining_files = total_files - i
+            eta_sec = avg_time_per_file * remaining_files
+            elapsed_str = str(timedelta(seconds=int(elapsed_sec)))
+            eta_str = str(timedelta(seconds=int(eta_sec)))
+            total_time_str = str(timedelta(seconds=int(elapsed_sec + eta_sec)))
+            percent = (i / total_files) * 100
+            progress_prefix = f"[{i}+{remaining_files}] [{percent:.2f}%] {elapsed_str}+{eta_str}={total_time_str}"
+            logging.info(f"{progress_prefix} {file_path.name}")
             continue
             
-        logging.info(f"{progress_prefix} {file_path.name}")
         metadata = extract_metadata(file_path)
-        
+
         if metadata["keywords"]:
-            set_nested(index_data, path_parts, {
+            set_nested(index_data["index"], path_parts, {
                 "keywords": metadata["keywords"],
                 "summary": metadata["summary"],
                 "mtime": mtime
             })
             
         # ALWAYS save progress to capture global CANONICAL_LIST updates
+        index_data["canonical_keywords"] = CANONICAL_LIST
         with open(INDEX_OUTPUT_JSON, 'w', encoding='utf-8') as f:
             json.dump(index_data, f, indent=2, ensure_ascii=False)
         
-        with open(CANONICAL_KEYWORDS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(CANONICAL_LIST, f, indent=2, ensure_ascii=False)
+        # Generate timing after processing is complete
+        elapsed_sec = time.perf_counter() - start_time
+        avg_time_per_file = elapsed_sec / i if i > 0 else 0
+        remaining_files = total_files - i
+        eta_sec = avg_time_per_file * remaining_files
+        elapsed_str = str(timedelta(seconds=int(elapsed_sec)))
+        eta_str = str(timedelta(seconds=int(eta_sec)))
+        total_time_str = str(timedelta(seconds=int(elapsed_sec + eta_sec)))
+        percent = (i / total_files) * 100
+        progress_prefix = f"[{i}+{remaining_files}] [{percent:.2f}%] {elapsed_str}+{eta_str}={total_time_str}"
         
-        if i % 1 == 0 or i == len(md_files): 
-            generate_md_index(index_data, INDEX_OUTPUT_MD)
-            
-    # Final generation
-    generate_md_index(index_data, INDEX_OUTPUT_MD)
-    logging.info(f"Indexing complete! Saved to {INDEX_OUTPUT_MD}")
+        logging.info(f"{progress_prefix} {file_path.name}")
+        
+    logging.info(f"Indexing complete! Saved to {INDEX_OUTPUT_JSON}")
 
 if __name__ == "__main__":
     main()

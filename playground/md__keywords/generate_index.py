@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import argparse
+import re
 from datetime import timedelta
 from pathlib import Path
 from openai import OpenAI
@@ -56,13 +57,16 @@ def save_index(output_path: Path, index_data: dict) -> None:
     ordered_data = {}
     if "index" in index_data:
         ordered_data["index"] = index_data["index"]
-    if "canonical_keywords" in index_data:
-        ordered_data["canonical_keywords"] = index_data["canonical_keywords"]
-    
+
     # Handle any other keys dynamically to avoid dropping data
     for k, v in index_data.items():
         if k not in ("index", "canonical_keywords"):
             ordered_data[k] = v
+
+    # canonical_keywords always last
+    if "canonical_keywords" in index_data:
+        ordered_data["canonical_keywords"] = index_data["canonical_keywords"]
+    
 
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(ordered_data, f, indent=2, ensure_ascii=False)
@@ -74,13 +78,60 @@ LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b")
 
 client = OpenAI(base_url=LOCAL_LLM_BASE_URL, api_key="local-llm-key")
 
+def split_camel_case(s: str) -> str:
+    """Splits CamelCase and PascalCase into Title Case with spaces."""
+    s = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', s)
+    s = re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])', ' ', s)
+    return s
+
+def normalize_to_canonical(keyword: str, canonical_map: dict) -> str:
+    """Deterministic post-LLM normalization against canonical keyword SSOT.
+
+    WHY: LLMs (especially small local models) are non-deterministic for exact
+    string matching. This function applies deterministic rules AFTER LLM
+    extraction to collapse trivial variations. The canonical_map itself is
+    the only source of truth — no manual exception lists needed.
+
+    Matching priority:
+        1. Exact match (fast path)
+        2. Case-insensitive match ("Jira ticket" → "Jira Ticket")
+        3. Singular/plural match ("Generic Subdomain" → "Generic Subdomains")
+    """
+    kw = keyword.strip()
+    kw = split_camel_case(kw)
+
+    # 1. Exact match
+    if kw in canonical_map:
+        return kw
+
+    kw_lower = kw.lower()
+
+    # 2. Case-insensitive match
+    for canonical_key in canonical_map:
+        if canonical_key.lower() == kw_lower:
+            return canonical_key
+
+    # 3. Singular/plural normalization (strip trailing 's' for comparison)
+    for canonical_key in canonical_map:
+        ck_lower = canonical_key.lower()
+        if (
+            kw_lower + 's' == ck_lower
+            or kw_lower.rstrip('s') == ck_lower.rstrip('s')
+        ):
+            return canonical_key
+
+    # No match — return as-is (becomes new canonical entry)
+    return kw
+
+
 def extract_metadata(file_path: Path, chapter: str, canonical_map: dict) -> dict:
     """Extracts document metadata using a dual-stage LLM pipeline.
 
-    The extraction happens in two sequential stages:
-    1. Raw Extraction: Extracts key phrases and a one-sentence summary from the text.
-    2. Alignment: Leverages the project's existing canonical terminology list
-       to identify and propose new terminology to enrich the canonical registry.
+    Stage 1 (Raw Extraction): Extracts named technical concepts and a summary.
+    Stage 2 (Normalization & Alignment): Uses the canonical keyword list as SSOT
+    to normalize raw keywords to their canonical forms and propose new terms.
+    All case/spelling normalization is delegated to the LLM, eliminating the
+    need for manual acronym or compound-word exception lists.
 
     Args:
         file_path: Dynamic path referencing the target document to analyze.
@@ -89,21 +140,31 @@ def extract_metadata(file_path: Path, chapter: str, canonical_map: dict) -> dict
 
     Returns:
         dict: A structured dictionary mapping:
-            - "keywords": list[str] of extracted primary key terms.
+            - "keywords": list[str] of normalized canonical key terms.
             - "summary": str of one-sentence document summary.
-            - "new_canonical": list[str] of newly aligned/proposed canonical keywords.
+            - "new_canonical": list[str] of newly proposed canonical keywords.
     """
     try:
         content = file_path.read_text(encoding='utf-8')
         content_snippet = content
         
-        # STAGE 1: Raw Extraction
+        # STAGE 1: Raw Extraction — Restrictive prompt for named concepts only
         raw_prompt = f"""
-Analyze the following technical Markdown document and provide:
-1. KEYWORDS: A comma-separated list of the most important technical keywords or key phrases.
+Extract ONLY specific, named technical concepts from this document.
+
+Rules for KEYWORDS:
+- Each keyword MUST be a proper noun, named methodology, named pattern, named tool, or specific technical term.
+  GOOD examples: "Domain-Driven Design", "Hexagonal Architecture", "Team Topologies", "Bounded Context", "Event Storming", "Conway's Law"
+  BAD examples: "collaboration", "clarity", "implementation", "organization", "boundaries", "speed", "cost", "quality"
+- Use the FULL canonical name of concepts (e.g., "Domain-Driven Design" not "DDD").
+- Do NOT use PascalCase or camelCase. ALWAYS separate words with spaces (e.g., "Event Storming", NOT "EventStorming").
+- Do NOT include generic adjectives, verbs, or descriptive phrases.
+- Return all relevant keywords per document.
+
+1. KEYWORDS: A comma-separated list of specific named technical concepts.
 2. SUMMARY: A concise, one-sentence summary of the document's core purpose.
 
-Return ONLY the information in this format:
+Return ONLY in this format:
 KEYWORDS: <list>
 SUMMARY: <sentence>
 
@@ -114,7 +175,7 @@ Text:
         raw_response = client.chat.completions.create(
             model=LOCAL_LLM_MODEL,
             messages=[
-                {"role": "system", "content": "You are a precise technical librarian. Extract metadata accurately."},
+                {"role": "system", "content": "You are a precise technical librarian specializing in software engineering taxonomy. Extract ONLY named concepts, methodologies, patterns, and tools. Never extract generic words."},
                 {"role": "user", "content": raw_prompt}
             ],
             temperature=0.1,
@@ -132,26 +193,25 @@ Text:
             elif line.startswith('SUMMARY:'):
                 raw_summary = line.replace('SUMMARY:', '').strip()
 
-        # STAGE 2: Canonical Alignment
+        # STAGE 2: Normalization against canonical SSOT (LLM for semantic matching)
         canonical_str = ", ".join(sorted(canonical_map.keys()))
         alignment_prompt = f"""
-Given the following raw keywords extracted from a document:
+For each raw keyword below, check if it matches (same concept, different casing or spelling) any term in the canonical list. If it matches, use the EXACT canonical form. If no match exists, keep the keyword in proper Title Case, with spaces between words. NEVER remove spaces between words (e.g., output "Event Storming", NOT "EventStorming").
+
+Raw keywords from document:
 [{", ".join(raw_keywords)}]
 
-And a list of canonical technical keywords for this project:
+Existing canonical keywords (SSOT — use these exact forms when a match exists):
 [{canonical_str}]
 
-Task:
-1. Identify distinct new technical terms that should be added to the canonical list.
-
-Return ONLY in this format:
-NEW_CANONICAL: <comma-separated new terms to add to the global list>
+Return ONLY in this exact format (one line):
+NORMALIZED: <comma-separated list of ALL keywords, each mapped to canonical form or Title Case>
 """
         
         alignment_response = client.chat.completions.create(
             model=LOCAL_LLM_MODEL,
             messages=[
-                {"role": "system", "content": "You are a terminology specialist. Standardize keywords and manage a canonical technical list."},
+                {"role": "system", "content": "You are a terminology normalization specialist. Map raw keywords to their existing canonical forms using exact string matching. Preserve the exact casing and spelling of canonical terms. For new terms, use proper Title Case with spaces between words (e.g. 'Modular Monoliths', NOT 'ModularMonoliths')."},
                 {"role": "user", "content": alignment_prompt}
             ],
             temperature=0.1,
@@ -160,16 +220,26 @@ NEW_CANONICAL: <comma-separated new terms to add to the global list>
         
         alignment_output = alignment_response.choices[0].message.content.strip()
         
-        new_canonical_terms = []
+        normalized_keywords = raw_keywords  # Fallback to raw if parsing fails
         
         for line in alignment_output.split('\n'):
-            if line.startswith('NEW_CANONICAL:'):
-                new_canonical_terms = [k.strip() for k in line.replace('NEW_CANONICAL:', '').split(',') if k.strip()]
-            
-        return {"keywords": raw_keywords, "summary": raw_summary, "new_canonical": new_canonical_terms}
+            if line.startswith('NORMALIZED:'):
+                parsed = [k.strip() for k in line.replace('NORMALIZED:', '').split(',') if k.strip()]
+                if parsed:
+                    normalized_keywords = parsed
+
+        # STAGE 3: Deterministic post-processing against canonical SSOT
+        # WHY: LLM output is probabilistic; this collapses casing/plural drift
+        normalized_keywords = [
+            normalize_to_canonical(kw, canonical_map) for kw in normalized_keywords
+        ]
+        # Deduplicate after normalization (two raw keywords may collapse to same canonical)
+        normalized_keywords = list(dict.fromkeys(normalized_keywords))
+
+        return {"keywords": normalized_keywords, "summary": raw_summary}
     except Exception as e:
         logging.error(f"Error processing {file_path.name}: {e}")
-        return {"keywords": [], "summary": "Error processing file.", "new_canonical": []}
+        return {"keywords": [], "summary": "Error processing file."}
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a keyword index for reference documents.")
@@ -245,7 +315,7 @@ def main():
         # Chapter tracking header
         chapter = path_parts[0] if len(path_parts) > 1 else "Root"
         if chapter != current_chapter:
-            logging.info(f"--- processando {chapter} ---")
+            logging.info(f"--- Chapter {chapter} ---")
             current_chapter = chapter
         
         # Check modified time for real incremental updates (nested lookup)
@@ -288,12 +358,8 @@ def main():
                 if chapter not in CANONICAL_MAP[kw]:
                     CANONICAL_MAP[kw].append(chapter)
             
-            # Ensure newly proposed canonical terms are in the global map under this chapter
-            for term in metadata.get("new_canonical", []):
-                if term not in CANONICAL_MAP:
-                    CANONICAL_MAP[term] = []
-                if chapter not in CANONICAL_MAP[term]:
-                    CANONICAL_MAP[term].append(chapter)
+            # WHY: new canonical detection is deterministic — any keyword
+            # not already in CANONICAL_MAP was auto-added above (L361-365)
             
         # Ensure canonical map is sorted before writing
         sorted_map = {}
